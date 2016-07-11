@@ -11,3 +11,16 @@ struct Person {
   2: string lastname
   3: i32 age
 }
+
+struct ManualSqlStruct {
+  1: i32 field_name
+  2: i32 field2
+}
+
+struct ManualSqlQueryTypeTest {
+  1: i32 intValue
+  2: double doubleValue
+  3: string stringValue
+  // 3: map<string, i32> mapValue
+  // 5: list<i32> arrayValue
+}

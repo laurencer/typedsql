@@ -135,11 +135,10 @@ object SqlQuery {
             val fields = struct.fields.toList.map({ case (fieldName, fieldType) =>
               q"${TermName(fieldName)}: ${resolveType(fieldType)}"
             })
-            val thriftFields = struct.fields.toList.zipWithIndex.map({ case ((fieldName, fieldType), idx) =>
-              q"""
-                val ${TermName(fieldName + "Field")} = new org.apache.thrift.protocol.TField(${Literal(Constant(fieldName))}, org.apache.thrift.protocol.TType.${hiveTypeToThriftTypeName(fieldType)}, ${Literal(Constant(idx + 1))})
-                val ${TermName(fieldName + "FieldManifest")} = implicitly[Manifest[${resolveType(fieldType)}]]
-               """
+            val thriftFields = struct.fields.toList.zipWithIndex.flatMap({ case ((fieldName, fieldType), idx) =>
+              List(q"""
+                val ${TermName(fieldName + "Field")} = new org.apache.thrift.protocol.TField(${Literal(Constant(fieldName))}, org.apache.thrift.protocol.TType.${hiveTypeToThriftTypeName(fieldType)}, ${Literal(Constant(idx + 1))})""",
+                q"""val ${TermName(fieldName + "FieldManifest")} = implicitly[Manifest[${resolveType(fieldType)}]]""")
             })
             // Generate the case class for the struct as well as the ThriftStructCodec3 for Parquet
             // compatibility
