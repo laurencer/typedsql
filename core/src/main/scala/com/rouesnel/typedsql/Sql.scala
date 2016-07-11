@@ -27,6 +27,12 @@ class SqlQuery extends StaticAnnotation {
   def macroTransform(annottees: Any*) = macro SqlQuery.impl
 }
 
+trait CompiledSqlQuery {
+  type Sources
+  type Configuration
+  type Row
+}
+
 object SqlQuery {
   import au.com.cba.omnia.beeswax.Hive
   import org.apache.hadoop.hive.ql.Driver
@@ -112,7 +118,7 @@ object SqlQuery {
 
           // Resolve the type of each Hive Type to a concrete Scala Type
           def structName(idx: Int): TypeName =
-            if (idx == 0) TypeName(s"OutputRecord") // Special case - first struct is the actual output record.s
+            if (idx == 0) TypeName(s"Row") // Special case - first struct is the actual output record.
             else TypeName(s"Struct${idx}")
 
 
@@ -130,6 +136,138 @@ object SqlQuery {
             case s: HiveQuery.StructType       => TermName("STRUCT")
           }
 
+          def hiveTypeToReadMethod(typ: HiveQuery.HiveType): Tree = typ match {
+            case p: HiveQuery.PrimitiveType[_] => q"_iprot.${TermName("read" + p.thriftTypeName.toLowerCase.capitalize)}"
+            case s: HiveQuery.StructType       => q"${structName(allStructs(s)).toTermName}.decode(_iprot)"
+          }
+
+          def buildMapDecode(keyType: Tree, valueType: Tree, readKey: Tree, readValue: Tree) = {
+            q"""
+               val _map = _iprot.readMapBegin()
+               if (_map.size == 0) {
+                 _iprot.readMapEnd()
+                 Map.empty[${keyType}, ${valueType}]
+               } else {
+                 val _rv = new scala.collection.mutable.HashMap[${keyType}, ${valueType}]
+                 var _i = 0
+                 while (_i < _map.size) {
+                   val _key = ${readKey}
+                   val _value = ${readValue}
+                   _rv(_key) = _value
+                   _i += 1
+                }
+                _iprot.readMapEnd()
+                _rv.toMap
+               }
+            """
+          }
+
+          def buildArrayDecode(valueType: Tree, readValue: Tree) = {
+           q"""
+               val _list = _iprot.readListBegin()
+               if (_list.size == 0) {
+                 _iprot.readListEnd()
+                 Nil
+               } else {
+                 val _rv = new scala.collection.mutable.ArrayBuffer[${valueType}](_list.size)
+                 var _i = 0
+                 while (_i < _list.size) {
+                   _rv += {
+                       ${readValue}
+                   }
+                   _i += 1
+                 }
+                 _iprot.readListEnd()
+                 _rv.toList
+               }
+            """
+          }
+
+          def buildThriftDecode(structIdx: Int, fields: List[(String, HiveQuery.HiveType)]) = {
+            def readMethodName(fieldName: String) = TermName("read" + fieldName.capitalize + "Value")
+
+            def readerForType(hiveType: HiveQuery.HiveType): Tree = hiveType match {
+              case p: HiveQuery.PrimitiveType[_] => hiveTypeToReadMethod(hiveType)
+              case m: HiveQuery.MapType          => buildMapDecode(resolveType(m.key), resolveType(m.value), readerForType(m.key), readerForType(m.value))
+              case a: HiveQuery.ArrayType        => buildArrayDecode(resolveType(a.valueType), readerForType(a.valueType))
+              case s: HiveQuery.StructType       => q"${structName(allStructs(s)).toTermName}.decode(_iprot)"
+            }
+
+            // Methods for reading each field.
+            val readMethods = fields.map({ case (fieldName, hiveType) =>
+              q"""private def ${readMethodName(fieldName)}(_iprot: org.apache.thrift.protocol.TProtocol): ${resolveType(hiveType)} = {
+                    ${readerForType(hiveType)}
+                  }
+               """})
+
+            // Mutable placeholder fields used to store each field as its read.
+            val placeholderFields = fields.map({ case (fieldName, hiveType) => {
+              val placeholderValue = hiveType match {
+                case p: HiveQuery.PrimitiveType[_] => p.placeholderValue(c)
+                case _ => q"null"
+              }
+              q"var ${TermName(fieldName)}: ${resolveType(hiveType)} = ${placeholderValue}"
+            }})
+
+            // Extracts a given field into the mutable placeholder (or throws an error on invalid data)
+            val fieldMatchers = fields.zipWithIndex.map({ case ((fieldName, hiveType), idx) =>
+              val fieldExtractor =
+                q"""
+                   _field.`type` match {
+                    case org.apache.thrift.protocol.TType.${hiveTypeToThriftTypeName(hiveType)} => {
+                      ${TermName(fieldName)} = ${readMethodName(fieldName)}(_iprot)
+                    }
+                   case _actualType => {
+                     val _expectedType = org.apache.thrift.protocol.TType.${hiveTypeToThriftTypeName(hiveType)}
+                     val errorMessage = ("Received wrong type for field " + ${Literal(Constant(fieldName))} + " (expected=%s, actual=%s).").format(
+                                           ttypeToHuman(_expectedType),
+                                           ttypeToHuman(_actualType)
+                                         )
+                     println("GOT ERROR " + errorMessage)
+                     throw new org.apache.thrift.protocol.TProtocolException(errorMessage)
+                     }
+                   }
+                 """
+              cq"""${Literal(Constant(idx + 1))} => { $fieldExtractor }"""
+            })
+
+            // Builds the class from the temporary/placeholder fields.
+            def classConstructor = {
+              val fieldValues = fields.map({ case (fieldName, hiveType) => {
+                q"${TermName(fieldName)}"
+              }})
+              q"${structName(structIdx).toTermName}(..$fieldValues)"
+            }
+
+            // Build the actual decode method.
+            val decode = q"""
+              override def decode(_iprot: org.apache.thrift.protocol.TProtocol): ${structName(structIdx)} = {
+                println("DECODE");
+                ..${placeholderFields}
+                var _done = false
+                ..${readMethods}
+                _iprot.readStructBegin()
+                while(!_done) {
+                  println("READING FIELD")
+                  val _field = _iprot.readFieldBegin()
+                  if (_field.`type` == org.apache.thrift.protocol.TType.STOP) {
+                    _done = true
+                  } else {
+                    _field.id match {
+                      case ..$fieldMatchers
+                    }
+                    _iprot.readFieldEnd()
+                  }
+                }
+                _iprot.readStructEnd()
+                println("FINISHED READING")
+                ${classConstructor}
+              }
+             """
+
+            decode
+          }
+
           // Generate structs
           val generatedStructs = allStructs.map({ case (struct, idx) => {
             val fields = struct.fields.toList.map({ case (fieldName, fieldType) =>
@@ -140,6 +278,32 @@ object SqlQuery {
                 val ${TermName(fieldName + "Field")} = new org.apache.thrift.protocol.TField(${Literal(Constant(fieldName))}, org.apache.thrift.protocol.TType.${hiveTypeToThriftTypeName(fieldType)}, ${Literal(Constant(idx + 1))})""",
                 q"""val ${TermName(fieldName + "FieldManifest")} = implicitly[Manifest[${resolveType(fieldType)}]]""")
             })
+
+            // Include the ttypeToHuman method (needed for constructing decoders)
+            val ttypeToHumanMethod = q"""
+             private def ttypeToHuman(byte: Byte) = {
+              // from https://github.com/apache/thrift/blob/master/lib/java/src/org/apache/thrift/protocol/TType.java
+                import org.apache.thrift.protocol.TType
+                byte match {
+                  case TType.STOP   => "STOP"
+                  case TType.VOID   => "VOID"
+                  case TType.BOOL   => "BOOL"
+                  case TType.BYTE   => "BYTE"
+                  case TType.DOUBLE => "DOUBLE"
+                  case TType.I16    => "I16"
+                  case TType.I32    => "I32"
+                  case TType.I64    => "I64"
+                  case TType.STRING => "STRING"
+                  case TType.STRUCT => "STRUCT"
+                  case TType.MAP    => "MAP"
+                  case TType.SET    => "SET"
+                  case TType.LIST   => "LIST"
+                  case TType.ENUM   => "ENUM"
+                  case _            => "UNKNOWN"
+                }
+              }
+            """
+
             // Generate the case class for the struct as well as the ThriftStructCodec3 for Parquet
             // compatibility
             List(
@@ -151,8 +315,12 @@ object SqlQuery {
               q"""
                  object ${structName(idx).toTermName} extends com.twitter.scrooge.ThriftStructCodec3[${structName(idx)}] {
                    ..${thriftFields}
-                   override def encode(t: ${structName(idx)}, oprot: org.apache.thrift.protocol.TProtocol): Unit = { println("ENCODE"); ??? }
-                   override def decode(iprot: org.apache.thrift.protocol.TProtocol): ${structName(idx)} = { println("DECODE"); ??? }
+                   ..${ttypeToHumanMethod}
+                   override def encode(t: ${structName(idx)}, oprot: org.apache.thrift.protocol.TProtocol): Unit = {
+                      println("Encoding is not supported for generated Hive tables.");
+                      ???
+                   }
+                   ${buildThriftDecode(idx, struct.fields.toList)}
                  }
                 """
             )
@@ -162,7 +330,8 @@ object SqlQuery {
             q"""def ${TermName(fieldName)}: ${resolveType(fieldType)}"""
           })
 
-          q"""$mods object $tpname extends ..$parents {
+          val amendedParents = parents :+ tq"CompiledSqlQuery"
+          q"""$mods object $tpname extends ..$amendedParents {
             ..$stats
 
             ..${generatedStructs}
@@ -216,7 +385,6 @@ object HiveQuery {
         case StringTag        => "STRING"
       }
     }
-
     def scalaType(c: whitebox.Context) = {
       import c.universe._
       val StringTag = implicitly[ClassTag[String]]
@@ -224,6 +392,15 @@ object HiveQuery {
         case ClassTag.Int     => tq"Int"
         case ClassTag.Double  => tq"Double"
         case StringTag        => tq"String"
+      }
+    }
+    def placeholderValue(c: whitebox.Context) = {
+      import c.universe._
+      val StringTag = implicitly[ClassTag[String]]
+      manifest match {
+        case ClassTag.Int     => q"0"
+        case ClassTag.Double  => q"0.0"
+        case StringTag        => q"null"
       }
     }
   }
