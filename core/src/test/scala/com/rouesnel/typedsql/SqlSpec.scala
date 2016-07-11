@@ -19,12 +19,12 @@ import au.com.cba.omnia.thermometer.hive.ThermometerHiveSpec
 @SqlQuery object SqlQueryTypeTest {
   def query =
     """
-      SELECT 1 as intValue,
-            1.3 as doubleValue,
-            "string" as stringValue,
-            map("key", 1.0, "key2", 2) as mapValue,
-            struct(1.0, "stringvalue", 0) as structValue,
-            named_struct("field_name", 1, "field2", 2) as namedStructValue
+      SELECT 1 as int_value,
+            1.3 as double_value,
+            "string" as string_value,
+            map("key", 1.0, "key2", 2) as map_value,
+            struct(1.0, "stringvalue", 0) as struct_value,
+            named_struct("field_name", 1, "field2", 2) as named_struct_value
     """
   // TODO - array's don't work yet: array(1, 2, 3, 4) as arrayValue
 
@@ -53,8 +53,24 @@ class SqlSpec extends ThermometerHiveSpec with ParquetLogging { def is = s2"""
       .map(a => { println(a); a })
       .toIterableExecution
     )
-    println(result)
 
+    println()
+    println(result)
+    println()
+
+    result must not(beEmpty)
+
+    val record = result.head
+    record.intValue     must beEqualTo(1)
+    record.doubleValue  must beEqualTo(1.3)
+    record.mapValue     must beEqualTo(Map("key" -> 1.0, "key2" -> 2.0))
+
+    record.structValue.col1 must beEqualTo(1.0)
+    record.structValue.col2 must beEqualTo("stringvalue")
+    record.structValue.col3 must beEqualTo(0)
+
+    record.namedStructValue.fieldName  must beEqualTo(1)
+    record.namedStructValue.field2     must beEqualTo(2)
     ok
   }
 }

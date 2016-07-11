@@ -28,7 +28,7 @@ struct ManualSqlQueryTypeTest {
 struct NestedStructTest {
   1: i32 intValue
   2: double doubleValue
-  3: string stringValue
+  3: string string_value
   4: ManualSqlStruct manual
   5: map<string, i32> mapValue
   6: list<i32> arrayValue

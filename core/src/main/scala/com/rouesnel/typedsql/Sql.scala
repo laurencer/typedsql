@@ -3,6 +3,7 @@ package com.rouesnel.typedsql
 import java.io.File
 
 import scala.util.control.NonFatal
+import scala.collection.immutable.ListMap
 import org.apache.hadoop.hive.ql.parse._
 
 import scalaz._
@@ -92,7 +93,7 @@ object SqlQuery {
               }})
             .groupBy({ case (parent, (fieldName, fieldType)) => parent })
             .mapValues(_.map({ case (parent, fieldInfo) => fieldInfo }))
-            .mapValues(fields => HiveQuery.StructType(fields.toMap))
+            .mapValues(fields => HiveQuery.StructType(ListMap(fields: _*)))
 
           // Find all the structs to generate appropriate types.
           val structs = outputRecordFields
@@ -108,8 +109,7 @@ object SqlQuery {
             })
 
           // Make the returned row itself a struct for simplicity/elegance.
-          val outputRecord = HiveQuery.StructType(fieldsToGenerate.toMap)
-
+          val outputRecord = HiveQuery.StructType(ListMap(fieldsToGenerate: _*))
 
           // Compose all of the structs together.
           val allStructs = (outputRecord +: (implicitStructs.values.toList ++ structs))
@@ -271,12 +271,12 @@ object SqlQuery {
           // Generate structs
           val generatedStructs = allStructs.map({ case (struct, idx) => {
             val fields = struct.fields.toList.map({ case (fieldName, fieldType) =>
-              q"${TermName(fieldName)}: ${resolveType(fieldType)}"
+              q"${TermName(HiveQuery.camelCaseField(fieldName))}: ${resolveType(fieldType)}"
             })
             val thriftFields = struct.fields.toList.zipWithIndex.flatMap({ case ((fieldName, fieldType), idx) =>
               List(q"""
-                val ${TermName(fieldName + "Field")} = new org.apache.thrift.protocol.TField(${Literal(Constant(fieldName))}, org.apache.thrift.protocol.TType.${hiveTypeToThriftTypeName(fieldType)}, ${Literal(Constant(idx + 1))})""",
-                q"""val ${TermName(fieldName + "FieldManifest")} = implicitly[Manifest[${resolveType(fieldType)}]]""")
+                val ${TermName(HiveQuery.camelCaseField(fieldName) + "Field")} = new org.apache.thrift.protocol.TField(${Literal(Constant(fieldName))}, org.apache.thrift.protocol.TType.${hiveTypeToThriftTypeName(fieldType)}, ${Literal(Constant(idx + 1))})""",
+                q"""val ${TermName(HiveQuery.camelCaseField(fieldName) + "FieldManifest")} = implicitly[Manifest[${resolveType(fieldType)}]]""")
             })
 
             // Include the ttypeToHuman method (needed for constructing decoders)
@@ -320,15 +320,11 @@ object SqlQuery {
                       println("Encoding is not supported for generated Hive tables.");
                       ???
                    }
-                   ${buildThriftDecode(idx, struct.fields.toList)}
+                   ${buildThriftDecode(idx, struct.camelCasedFields.toList)}
                  }
                 """
             )
           }}).toList.flatten
-
-          val generatedOutputRecordFields = fieldsToGenerate.map({ case (fieldName, fieldType) =>
-            q"""def ${TermName(fieldName)}: ${resolveType(fieldType)}"""
-          })
 
           val amendedParents = parents :+ tq"CompiledSqlQuery"
           q"""$mods object $tpname extends ..$amendedParents {
@@ -407,8 +403,29 @@ object HiveQuery {
   case class MapType(key: HiveType, value: HiveType) extends HiveType {
     def allTypes: Set[HiveType] = (key.allTypes ++ value.allTypes) + this
   }
-  case class StructType(fields: Map[String, HiveType]) extends HiveType {
+
+  def camelCaseField(str: String): String = {
+    /** verbatim copy of scrooge 3.17::com.twitter.scrooge.ThriftStructMetaData.scala */
+    str.takeWhile(_ == '_') +
+      str
+        .split('_')
+        .filterNot(_.isEmpty)
+        .zipWithIndex.map { case (part, ind) =>
+        val first = if (ind == 0) part(0).toLower else part(0).toUpper
+        val isAllUpperCase = part.forall(_.isUpper)
+        val rest = if (isAllUpperCase) part.drop(1).toLowerCase else part.drop(1)
+        new StringBuilder(part.size).append(first).append(rest)
+      }
+        .mkString
+  }
+
+  case class StructType(fields: ListMap[String, HiveType]) extends HiveType {
     def allTypes: Set[HiveType] = fields.values.flatMap(_.allTypes).toSet + this
+    lazy val camelCasedFields: ListMap[String, HiveType] = {
+      fields.map({ case (fieldName, value) =>
+        camelCaseField(fieldName) -> value
+      })
+    }
   }
   case class ArrayType(valueType: HiveType) extends HiveType {
     def allTypes: Set[HiveType] = Set(this, valueType)
@@ -434,7 +451,7 @@ object HiveQuery {
       case StructExtractor(fields) =>
         fields.split(",").toList.map({ case FieldExtractor(fieldName, typeName) =>
           parseHiveType(typeName).map(typ => fieldName -> typ)
-        }).sequenceU.map(_.toMap).map(StructType)
+        }).sequenceU.map(els => ListMap(els: _*)).map(StructType)
       // Array Types
       case ArrayExtractor(keyType) =>
         parseHiveType(keyType).map(ArrayType(_))
