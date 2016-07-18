@@ -28,12 +28,6 @@ class SqlQuery extends StaticAnnotation {
   def macroTransform(annottees: Any*) = macro SqlQuery.impl
 }
 
-trait CompiledSqlQuery {
-  type Sources
-  type Configuration
-  type Row
-}
-
 object SqlQuery {
   import au.com.cba.omnia.beeswax.Hive
   import org.apache.hadoop.hive.ql.Driver
@@ -44,7 +38,7 @@ object SqlQuery {
 
   def impl(c: whitebox.Context)(annottees: c.Expr[Any]*): c.Expr[Any] = {
     import c.universe._
-
+    val sourceMapping = new SourceMapping(c)
     val result = {
       annottees.map(_.tree).toList match {
         case q"$mods object $tpname extends ..$parents { ..$stats }" :: Nil => {
@@ -56,6 +50,8 @@ object SqlQuery {
               case Literal(Constant(code)) => code
               case _ => c.abort(c.enclosingPosition, "Query function must be a literal string.")
           }
+
+          sourceMapping.findSourceField(stats)
 
           val sqlStatement = sqlLiteral.toString.trim.replaceAll("\\n", " ")
           if (sqlStatement.split(";").length != 1) {
@@ -390,6 +386,14 @@ object HiveQuery {
         case StringTag        => tq"String"
       }
     }
+    def scalaTypeName = {
+      val StringTag = implicitly[ClassTag[String]]
+      manifest match {
+        case ClassTag.Int     => "Integer"
+        case ClassTag.Double  => "Double"
+        case StringTag        => "String"
+      }
+    }
     def placeholderValue(c: whitebox.Context) = {
       import c.universe._
       val StringTag = implicitly[ClassTag[String]]
@@ -480,50 +484,68 @@ object HiveSupport {
     }
   }
 
-  def initialize(): Future[HiveConf] = Future { useHiveClassloader {
-    import org.apache.hadoop.hive.conf.HiveConf, HiveConf.ConfVars, ConfVars._
-    import org.apache.hadoop.hive.metastore._, api._
+  val noopLogger: String => Unit = _ => ()
 
-    val tempDir = File.createTempFile("hive", "compile")
-    tempDir.delete()
-    tempDir.mkdir()
+  def initialize(changeClassloader: Boolean = true, log: String => Unit = noopLogger): Future[HiveConf] = Future {
+    log("Starting to initialize Hive.")
+    def _initialize = {
+      import org.apache.hadoop.hive.conf.HiveConf, HiveConf.ConfVars, ConfVars._
+      import org.apache.hadoop.hive.metastore._, api._
 
-    /* Creates a fake local instance for Hive - stolen from Thermometer Hive */
-    lazy val hiveDir: String       = tempDir.toString
-    lazy val hiveDb: String        = s"$hiveDir/hive_db"
-    lazy val hiveWarehouse: String = s"$hiveDir/warehouse"
-    lazy val derbyHome: String     = s"$hiveDir/derby"
-    lazy val hiveConf: HiveConf    = new HiveConf <| (conf => {
-      conf.setVar(METASTOREWAREHOUSE, hiveWarehouse)
-    })
+      log("Creating temporary directory for Hive.")
+      val tempDir = File.createTempFile("hive", "compile")
+      tempDir.delete()
+      tempDir.mkdir()
+      log(s"Temporary directory: ${tempDir}")
 
-    // Export the warehouse path so it gets picked up when a new hive conf is instantiated somehwere else.
-    System.setProperty(METASTOREWAREHOUSE.varname, hiveWarehouse)
-    System.setProperty("derby.system.home", derbyHome)
-    // Export the derby db file location so it is different for each test.
-    System.setProperty("javax.jdo.option.ConnectionURL", s"jdbc:derby:;databaseName=$hiveDb;create=true")
-    System.setProperty("hive.metastore.ds.retry.attempts", "0")
+      /* Creates a fake local instance for Hive - stolen from Thermometer Hive */
+      lazy val hiveDir: String       = tempDir.toString
+      lazy val hiveDb: String        = s"$hiveDir/hive_db"
+      lazy val hiveWarehouse: String = s"$hiveDir/warehouse"
+      lazy val derbyHome: String     = s"$hiveDir/derby"
+      lazy val hiveConf: HiveConf    = new HiveConf <| (conf => {
+        conf.setVar(METASTOREWAREHOUSE, hiveWarehouse)
+      })
 
-    // Wait for the Hive client to initialise
-    val client = RetryingMetaStoreClient.getProxy(
-      hiveConf,
-      new HiveMetaHookLoader() {
-        override def getHook(tbl: Table) = null
-      },
-      classOf[HiveMetaStoreClient].getName()
-    )
-    try {
-      client.getAllDatabases()
-    } finally {
-      client.close
+      // Export the warehouse path so it gets picked up when a new hive conf is instantiated somehwere else.
+      System.setProperty(METASTOREWAREHOUSE.varname, hiveWarehouse)
+      System.setProperty("derby.system.home", derbyHome)
+      // Export the derby db file location so it is different for each test.
+      System.setProperty("javax.jdo.option.ConnectionURL", s"jdbc:derby:;databaseName=$hiveDb;create=true")
+      System.setProperty("hive.metastore.ds.retry.attempts", "0")
+
+      // Wait for the Hive client to initialise
+      log(s"Creating Hive Client.")
+      val client = RetryingMetaStoreClient.getProxy(
+        hiveConf,
+        new HiveMetaHookLoader() {
+          override def getHook(tbl: Table) = null
+        },
+        classOf[HiveMetaStoreClient].getName()
+      )
+      try {
+        log("Checking if Hive is initialised (by getting all databases)")
+        client.getAllDatabases()
+        log("Hive is initialised properly.")
+      } finally {
+        log("Closing Hive Client.")
+        client.close
+        log("Hive client closed.")
+      }
+
+      log("Creating placeholder tables.")
+      import au.com.cba.omnia.beeswax.Hive
+      val successfullyCreated = Hive.createParquetTable[Person]("test_db", "test", Nil)
+        .run(hiveConf)
+      log("Placeholder tables created successfully.")
+      log(s"Created test table: $successfullyCreated")
+
+      hiveConf
     }
-
-    import au.com.cba.omnia.beeswax.Hive
-    val successfullyCreated = Hive.createParquetTable[Person]("test_db", "test", Nil)
-      .run(hiveConf)
-
-    println(s"Created test table: $successfullyCreated")
-
-    hiveConf
-  }}
+    if (changeClassloader) {
+      useHiveClassloader(_initialize)
+    } else {
+      _initialize
+    }
+  }
 }

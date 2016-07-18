@@ -17,6 +17,12 @@ import au.com.cba.omnia.thermometer.fact.PathFactoids.{exists, missing, records}
 import au.com.cba.omnia.thermometer.hive.ThermometerHiveSpec
 
 @SqlQuery object SqlQueryTypeTest {
+  def sources =
+    (
+      "people"    -> com.rouesnel.typedsql.Person,
+      "test"      -> ManualSqlStruct,
+      "my_people" -> Person
+    )
   def query =
     """
       SELECT 1 as int_value,
@@ -36,7 +42,6 @@ class SqlSpec extends ThermometerHiveSpec with ParquetLogging { def is = s2"""
 """
   import au.com.cba.omnia.beeswax.Hive
   def basic = {
-
     println(Hive.createParquetTable[Person]("test_db", "test", Nil).run(hiveConf))
 
     println(Hive.query(
@@ -46,6 +51,7 @@ class SqlSpec extends ThermometerHiveSpec with ParquetLogging { def is = s2"""
         LOCATION '${dir}/test'
         AS ${SqlQueryTypeTest.query}
       """).run(hiveConf))
+
 
     println("GENERATED!")
     import com.twitter.scalding.TDsl._
