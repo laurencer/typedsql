@@ -1,6 +1,7 @@
 package com.rouesnel.typedsql
 
 import java.io.File
+import java.util.Date
 
 import scala.util.control.NonFatal
 import scala.collection.immutable.ListMap
@@ -13,8 +14,9 @@ import scala.language.experimental.macros
 import scala.annotation.compileTimeOnly
 import scala.reflect.macros._
 import au.com.cba.omnia.omnitool.{Result, ResultantMonad, ResultantOps, ToResultantMonadOps}
+import org.apache.hadoop.fs.FileSystem
 import org.apache.hadoop.hive.conf.HiveConf
-import org.apache.hadoop.hive.metastore.api.Schema
+import org.apache.hadoop.hive.metastore.api._
 import org.apache.hadoop.hive.ql.Driver
 import org.apache.hadoop.hive.ql.session.SessionState
 
@@ -22,6 +24,7 @@ import scala.collection.convert.decorateAsScala._
 import scala.concurrent._
 import duration._
 import scala.reflect.ClassTag
+import scala.util.Random
 
 @compileTimeOnly("enable macro paradise to expand macro annotations")
 class SqlQuery extends StaticAnnotation {
@@ -51,8 +54,6 @@ object SqlQuery {
               case _ => c.abort(c.enclosingPosition, "Query function must be a literal string.")
           }
 
-          sourceMapping.findSourceField(stats)
-
           val sqlStatement = sqlLiteral.toString.trim.replaceAll("\\n", " ")
           if (sqlStatement.split(";").length != 1) {
             c.abort(c.enclosingPosition, s"Only a single SQL statement is supported. Please remove any ';'s from $sqlLiteral")
@@ -61,11 +62,14 @@ object SqlQuery {
           // Try to parse and exit here first.
           // This is quicker than compiling and ensures only a SELECT statement is used
           // rather than any DDL statements.
-          HiveQuery.parseSelect(sqlStatement)
-            .fold(c.abort(c.enclosingPosition, _), identity)
+          //HiveQuery.parseSelect(sqlStatement)
+          // .fold(c.abort(c.enclosingPosition, _), identity)
+
+          // Get sources and create temp tables mapping to them.
+          val sources = sourceMapping.readSourcesField(stats)
 
           // Retrieve the schema from the compiled query.
-          val schema = HiveQuery.compileQuery(hiveConf, sqlStatement)
+          val schema = HiveQuery.compileQuery(hiveConf, sources, sqlStatement)
             .fold(ex => c.abort(c.enclosingPosition, ex.toString), identity)
 
           // Parse the types from the schema.
@@ -238,13 +242,10 @@ object SqlQuery {
             // Build the actual decode method.
             val decode = q"""
               override def decode(_iprot: org.apache.thrift.protocol.TProtocol): ${structName(structIdx)} = {
-                println("DECODE");
                 ..${placeholderFields}
                 var _done = false
-                ..${readMethods}
                 _iprot.readStructBegin()
                 while(!_done) {
-                  println("READING FIELD")
                   val _field = _iprot.readFieldBegin()
                   if (_field.`type` == org.apache.thrift.protocol.TType.STOP) {
                     _done = true
@@ -256,12 +257,11 @@ object SqlQuery {
                   }
                 }
                 _iprot.readStructEnd()
-                println("FINISHED READING")
                 ${classConstructor}
               }
              """
 
-            decode
+            readMethods :+ decode
           }
 
           // Generate structs
@@ -271,8 +271,8 @@ object SqlQuery {
             })
             val thriftFields = struct.fields.toList.zipWithIndex.flatMap({ case ((fieldName, fieldType), idx) =>
               List(q"""
-                val ${TermName(HiveQuery.camelCaseField(fieldName) + "Field")} = new org.apache.thrift.protocol.TField(${Literal(Constant(fieldName))}, org.apache.thrift.protocol.TType.${hiveTypeToThriftTypeName(fieldType)}, ${Literal(Constant(idx + 1))})""",
-                q"""val ${TermName(HiveQuery.camelCaseField(fieldName) + "FieldManifest")} = implicitly[Manifest[${resolveType(fieldType)}]]""")
+                val ${TermName(HiveQuery.camelCaseField(fieldName).capitalize + "Field")} = new org.apache.thrift.protocol.TField(${Literal(Constant(fieldName))}, org.apache.thrift.protocol.TType.${hiveTypeToThriftTypeName(fieldType)}, ${Literal(Constant(idx + 1))})""",
+                q"""val ${TermName(HiveQuery.camelCaseField(fieldName).capitalize + "FieldManifest")} = implicitly[Manifest[${resolveType(fieldType)}]]""")
             })
 
             // Include the ttypeToHuman method (needed for constructing decoders)
@@ -316,7 +316,7 @@ object SqlQuery {
                       println("Encoding is not supported for generated Hive tables.");
                       ???
                    }
-                   ${buildThriftDecode(idx, struct.camelCasedFields.toList)}
+                   ..${buildThriftDecode(idx, struct.camelCasedFields.toList)}
                  }
                 """
             )
@@ -335,217 +335,5 @@ object SqlQuery {
     }
     println(result)
     c.Expr[Any](result)
-  }
-}
-
-/** Provides helpers for parsing/manipulating Hive queries */
-object HiveQuery {
-  def parseSelect(query: String): String \/ ASTNode = {
-    try {
-      val pd = new ParseDriver()
-      \/.right(pd.parseSelect(query, null))
-    } catch {
-      case ex: Exception => \/.left(s"Error parsing the sql query: ${ex.getMessage}")
-    }
-  }
-
-  def compileQuery(hiveConf: HiveConf, query: String): Throwable \/ Schema = HiveSupport.useHiveClassloader {
-    SessionState.start(hiveConf)
-    SessionState.get().setIsSilent(true)
-    val driver = new Driver(hiveConf)
-    try {
-      driver.init()
-      driver.compile(query)
-      \/.right(driver.getSchema())
-    } catch {
-      case NonFatal(ex) => \/.left(new Exception(s"Error trying to run query '$query'", ex))
-    } finally {
-      driver.destroy()
-    }
-  }
-
-  sealed abstract class HiveType {
-    def allTypes: Set[HiveType]
-  }
-  case class PrimitiveType[T](implicit manifest: ClassTag[T]) extends HiveType {
-    def allTypes: Set[HiveType] = Set(this)
-    def thriftTypeName = {
-      val StringTag = implicitly[ClassTag[String]]
-      manifest match {
-        case ClassTag.Int     => "I32"
-        case ClassTag.Double  => "DOUBLE"
-        case StringTag        => "STRING"
-      }
-    }
-    def scalaType(c: whitebox.Context) = {
-      import c.universe._
-      val StringTag = implicitly[ClassTag[String]]
-      manifest match {
-        case ClassTag.Int     => tq"Int"
-        case ClassTag.Double  => tq"Double"
-        case StringTag        => tq"String"
-      }
-    }
-    def scalaTypeName = {
-      val StringTag = implicitly[ClassTag[String]]
-      manifest match {
-        case ClassTag.Int     => "Integer"
-        case ClassTag.Double  => "Double"
-        case StringTag        => "String"
-      }
-    }
-    def placeholderValue(c: whitebox.Context) = {
-      import c.universe._
-      val StringTag = implicitly[ClassTag[String]]
-      manifest match {
-        case ClassTag.Int     => q"0"
-        case ClassTag.Double  => q"0.0"
-        case StringTag        => q"null"
-      }
-    }
-  }
-  case class MapType(key: HiveType, value: HiveType) extends HiveType {
-    def allTypes: Set[HiveType] = (key.allTypes ++ value.allTypes) + this
-  }
-
-  def camelCaseField(str: String): String = {
-    /** verbatim copy of scrooge 3.17::com.twitter.scrooge.ThriftStructMetaData.scala */
-    str.takeWhile(_ == '_') +
-      str
-        .split('_')
-        .filterNot(_.isEmpty)
-        .zipWithIndex.map { case (part, ind) =>
-        val first = if (ind == 0) part(0).toLower else part(0).toUpper
-        val isAllUpperCase = part.forall(_.isUpper)
-        val rest = if (isAllUpperCase) part.drop(1).toLowerCase else part.drop(1)
-        new StringBuilder(part.size).append(first).append(rest)
-      }
-        .mkString
-  }
-
-  case class StructType(fields: ListMap[String, HiveType]) extends HiveType {
-    def allTypes: Set[HiveType] = fields.values.flatMap(_.allTypes).toSet + this
-    lazy val camelCasedFields: ListMap[String, HiveType] = {
-      fields.map({ case (fieldName, value) =>
-        camelCaseField(fieldName) -> value
-      })
-    }
-  }
-  case class ArrayType(valueType: HiveType) extends HiveType {
-    def allTypes: Set[HiveType] = Set(this, valueType)
-  }
-
-  def parseHiveType(typeName: String): String \/ HiveType = {
-    val MapExtractor    = "map<(.*),(.*)>".r
-    val StructExtractor = "struct<(.*)>".r
-    val FieldExtractor  = "(.*):(.*)".r
-    val ArrayExtractor  = "array<(.*)>".r
-
-    typeName match {
-      case "int"    => \/.right(PrimitiveType[Int])
-      case "string" => \/.right(PrimitiveType[String])
-      case "double" => \/.right(PrimitiveType[Double])
-      // Map Types
-      case  MapExtractor(keyType, valueType) =>
-        for {
-          key   <- parseHiveType(keyType)
-          value <- parseHiveType(valueType)
-        } yield MapType(key, value)
-      // Struct Types
-      case StructExtractor(fields) =>
-        fields.split(",").toList.map({ case FieldExtractor(fieldName, typeName) =>
-          parseHiveType(typeName).map(typ => fieldName -> typ)
-        }).sequenceU.map(els => ListMap(els: _*)).map(StructType)
-      // Array Types
-      case ArrayExtractor(keyType) =>
-        parseHiveType(keyType).map(ArrayType(_))
-      // Unknown Types
-      case unmatchedType => \/.left(unmatchedType)
-    }
-  }
-}
-
-/** Provides functions to support a fake Hive environment */
-object HiveSupport {
-  import scala.concurrent.ExecutionContext.Implicits.global
-
-  def useHiveClassloader[T](f: => T): T = {
-    // Replace the classloader with the correct path.
-    val contextClassLoader = Thread.currentThread().getContextClassLoader
-    Thread.currentThread().setContextClassLoader(classOf[HiveConf].getClassLoader)
-    // Run the computation
-    val result = \/.fromTryCatchNonFatal(f)
-    // Reset the contextClassLoader.
-    Thread.currentThread().setContextClassLoader(contextClassLoader)
-    // Return the result
-    result match {
-      case \/-(value) => value
-      case -\/(error) => throw error
-    }
-  }
-
-  val noopLogger: String => Unit = _ => ()
-
-  def initialize(changeClassloader: Boolean = true, log: String => Unit = noopLogger): Future[HiveConf] = Future {
-    log("Starting to initialize Hive.")
-    def _initialize = {
-      import org.apache.hadoop.hive.conf.HiveConf, HiveConf.ConfVars, ConfVars._
-      import org.apache.hadoop.hive.metastore._, api._
-
-      log("Creating temporary directory for Hive.")
-      val tempDir = File.createTempFile("hive", "compile")
-      tempDir.delete()
-      tempDir.mkdir()
-      log(s"Temporary directory: ${tempDir}")
-
-      /* Creates a fake local instance for Hive - stolen from Thermometer Hive */
-      lazy val hiveDir: String       = tempDir.toString
-      lazy val hiveDb: String        = s"$hiveDir/hive_db"
-      lazy val hiveWarehouse: String = s"$hiveDir/warehouse"
-      lazy val derbyHome: String     = s"$hiveDir/derby"
-      lazy val hiveConf: HiveConf    = new HiveConf <| (conf => {
-        conf.setVar(METASTOREWAREHOUSE, hiveWarehouse)
-      })
-
-      // Export the warehouse path so it gets picked up when a new hive conf is instantiated somehwere else.
-      System.setProperty(METASTOREWAREHOUSE.varname, hiveWarehouse)
-      System.setProperty("derby.system.home", derbyHome)
-      // Export the derby db file location so it is different for each test.
-      System.setProperty("javax.jdo.option.ConnectionURL", s"jdbc:derby:;databaseName=$hiveDb;create=true")
-      System.setProperty("hive.metastore.ds.retry.attempts", "0")
-
-      // Wait for the Hive client to initialise
-      log(s"Creating Hive Client.")
-      val client = RetryingMetaStoreClient.getProxy(
-        hiveConf,
-        new HiveMetaHookLoader() {
-          override def getHook(tbl: Table) = null
-        },
-        classOf[HiveMetaStoreClient].getName()
-      )
-      try {
-        log("Checking if Hive is initialised (by getting all databases)")
-        client.getAllDatabases()
-        log("Hive is initialised properly.")
-      } finally {
-        log("Closing Hive Client.")
-        client.close
-        log("Hive client closed.")
-      }
-
-      log("Creating placeholder tables.")
-      import au.com.cba.omnia.beeswax.Hive
-      val successfullyCreated = Hive.createParquetTable[Person]("test_db", "test", Nil)
-        .run(hiveConf)
-      log("Placeholder tables created successfully.")
-      log(s"Created test table: $successfullyCreated")
-
-      hiveConf
-    }
-    if (changeClassloader) {
-      useHiveClassloader(_initialize)
-    } else {
-      _initialize
-    }
   }
 }

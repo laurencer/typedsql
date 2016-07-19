@@ -2,6 +2,8 @@ package com.rouesnel.typedsql
 
 import java.util.Date
 
+import com.twitter.scrooge.ThriftStructCodec3
+
 import scala.util.Random
 import scala.util.Random
 
@@ -24,7 +26,7 @@ trait CompiledSqlQuery {
   def partitions: List[(String, String)] = Nil
 
   /** Source datasets inside the query */
-  type Sources
+  type Sources = Map[String, ThriftStructCodec3[_]]
 
   /** Configuration parameters available inside the query */
   type Configuration

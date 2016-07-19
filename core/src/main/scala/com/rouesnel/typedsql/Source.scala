@@ -1,61 +1,112 @@
 package com.rouesnel.typedsql
 
+import com.twitter.scrooge.ThriftStruct
+
+import scala.collection.immutable.ListMap
 import scala.reflect.api.Trees
 import scala.reflect.macros.whitebox
 
 class SourceMapping(c: whitebox.Context) {
   import c.universe._
 
-  def findSourceField(objectBody: Seq[Trees#Tree]) = {
-    val sourceField = objectBody.collect({
-      case q"def sources = ${sources}" => sources
-    }).headOption
-      .getOrElse(c.abort(c.enclosingPosition, "Must have a function called `source`."))
+  import HiveQuery._
 
-    val sources = sourceField match {
-      // It's easy to get the args of a tuple constructor as a flat list - so we pattern
-      // match it here.
-      case Apply(Select(Ident(TermName("scala")), TermName(tupleConstructor)), args) => {
-        // Ensure that a tuple has been used before looking at function args.
-        if (tupleConstructor.startsWith("Tuple")) {
-          args.map({
-            case q"${Literal(Constant(name))} -> ${objectType}" => {
-              println(s"${name} -> ${objectType}")
-              val typeChecked = c.typecheck(objectType, c.TYPEmode)
-              val tpe = Option(typeChecked.tpe).getOrElse(c.abort(c.enclosingPosition, "Could not determine type of " + objectType.toString()))
-              // Ensure its a ThriftStructCodec3
-              if (! tpe.weak_<:<(c.typecheck(tq"com.twitter.scrooge.ThriftStructCodec3[_]", c.TYPEmode).tpe)) {
-                c.abort(c.enclosingPosition, s"${objectType} must be a subtype of ThriftStructCodec3[_]")
-              }
-              // Now we can extract all relevant fields and reverse a schema.
-              // 1. Extract the val {name}Field = new TField(...) methods
-              val fieldNamesFromCompanion = tpe.members.toList.collect({
-                case m: MethodSymbol if m.name.toString.endsWith("Field") && (! m.isPrivate) => {
-                  val fieldName = m.name.toString
-                  fieldName.substring(0, fieldName.length - "Field".length)
-                }
-              })
+  def listMap[K, V](els: Seq[(K, V)]): ListMap[K, V] = ListMap(els: _*)
 
-              println(fieldNamesFromCompanion)
+  private val seqType     = c.weakTypeOf[Seq[_]]
+  private val mapType     = c.weakTypeOf[scala.collection.Map[_, _]]
+  private val intType     = c.weakTypeOf[Int]
+  private val doubleType  = c.weakTypeOf[Double]
+  private val stringType  = c.weakTypeOf[String]
+  private val thriftType  = c.weakTypeOf[ThriftStruct]
 
-              val underlyingClass = tpe.baseClasses.collect({
-                case c: ClassSymbol if c.name == TypeName("ThriftStructCodec3") =>
-                  c.typeParams
-              }).headOption
-              println(underlyingClass)
-              println(tpe.baseClasses.toList)
-
-            }
-            case other => c.abort(c.enclosingPosition, "A string literal must be used for the mapping name with the arrow operator (e.g. `\"my_table\" -> MyTableRow`. Instead found: " + other.toString())
-          })
-        } else {
-          c.abort(c.enclosingPosition, "Source function must be a tuple (not a list). Instead found: " + tupleConstructor)
-        }
-      }
-      case _ => c.abort(c.enclosingPosition, "Source function must be a tuple of (String -> Object tuples).")
+  /** Converts a Scala type to a Hive type */
+  private def convertScalaToHiveType(tpe: Type): HiveType = tpe match {
+    case typ if (typ <:< doubleType) => PrimitiveType[Double]
+    case typ if (typ <:< intType)    => PrimitiveType[Int]
+    case typ if (typ <:< stringType) => PrimitiveType[String]
+    case map if (map <:< mapType) => {
+      val key :: value :: Nil = map.typeArgs
+      MapType(convertScalaToHiveType(key), convertScalaToHiveType(key))
     }
-
-    c.abort(c.enclosingPosition, "EOF.")
+    case seq if (seq <:< seqType) => {
+      val inner = seq.typeArgs.head
+      ArrayType(convertScalaToHiveType(inner))
+    }
+    case struct if (struct <:< thriftType) => {
+      mapObjectTypeToHiveSchema(struct.companion)
+    }
+    case other => {
+      println(s"ERROR - ${other}")
+      println(showRaw(other))
+      c.abort(c.enclosingPosition, "ERRORED")
+    }
   }
 
+  /** Converts a Scrooge struct type to a Hive type */
+  private def mapObjectTypeToHiveSchema(thriftCompanion: Type): StructType = {
+    // Now we can extract all relevant fields and reverse a schema.
+    // 1. Extract the val {name}Field = new TField(...) methods
+    val fieldNamesFromCompanion = thriftCompanion.members.toList.collect({
+      case m: MethodSymbol if m.name.toString.endsWith("Field") && (! m.isPrivate) => {
+        val fieldName = m.name.toString
+        fieldName.substring(0, fieldName.length - "Field".length)
+      }
+    })
+
+    // 2. Extract the reader fields to work out each return type.
+    val readerMethodNames = fieldNamesFromCompanion.map(fieldName => {
+      s"read${fieldName}Value" -> fieldName
+    }).toMap
+    val readerFields = thriftCompanion.members.toList.collect({
+      case m: MethodSymbol if readerMethodNames.contains(m.name.toString) => {
+        readerMethodNames(m.name.toString) -> m.returnType
+      }
+    })
+
+    // 3. Perform case conversion.
+    // Convert capitals to underscores unless followed by multipled capitals.
+    val cleanedFields = readerFields.map({ case (name, fieldType) =>
+      // Stolen from http://stackoverflow.com/a/1176023/49142
+      val underscoredName =
+        name
+          .replaceAll("""(.)([A-Z][a-z]+)""", """$1_$2""")
+          .replaceAll("""([a-z0-9])([A-Z])""", "$1_$2")
+          .toLowerCase()
+
+      underscoredName -> fieldType
+    })
+
+    StructType(listMap(cleanedFields.map({
+      case (fieldName, fieldType) => fieldName -> convertScalaToHiveType(fieldType)
+    })))
+  }
+
+  def readSourcesField(objectBody: Seq[Trees#Tree]): Map[String, StructType] = {
+    objectBody.collect({
+      case q"def sources = ${sources}" => sources
+    }).headOption
+      .fold(Map.empty[String, StructType])({
+      // It's easy to get the args of a tuple constructor as a flat list - so we pattern
+      // match it here.
+      case Apply(Ident(TermName("Map")), args) => {
+        args.map({
+          case q"${Literal(Constant(name))} -> ${objectType}" => {
+            println(s"${name} -> ${objectType}")
+            val typeChecked = c.typecheck(objectType, c.TYPEmode)
+            val tpe = Option(typeChecked.tpe).getOrElse(c.abort(c.enclosingPosition, "Could not determine type of " + objectType.toString()))
+            // Ensure its a ThriftStructCodec3
+            if (! tpe.weak_<:<(c.typecheck(tq"com.twitter.scrooge.ThriftStructCodec3[_]", c.TYPEmode).tpe)) {
+              c.abort(c.enclosingPosition, s"${objectType} must be a subtype of ThriftStructCodec3[_]")
+            }
+
+            val cleanedFields = mapObjectTypeToHiveSchema(tpe)
+            name.toString -> cleanedFields
+          }
+          case other => c.abort(c.enclosingPosition, "A string literal must be used for the mapping name with the arrow operator (e.g. `\"my_table\" -> MyTableRow`. Instead found: " + other.toString())
+        }).toMap
+      }
+      case other => c.abort(c.enclosingPosition, "Source function must be a tuple of (String -> Object tuples). Instead found: " + showRaw(other))
+    })
+  }
 }
