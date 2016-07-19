@@ -43,7 +43,7 @@ object CliHelper {
 
     val jars = binDirectory.listFiles().toList
 
-    s"java -cp ${jars.mkString(":")} com.rouesnel.typedsql.server.CompilationServer".run()
+    s"java -cp ${jars.mkString(":")} com.rouesnel.typedsql.intellij.server.CompilationServer".run()
   }
 }
 
@@ -97,7 +97,7 @@ class Injector extends SyntheticMembersInjector {
       |  }
       |}
     """.stripMargin).withFallback(DefaultAkkaConfig.config).resolve()) }
-  val remoteActor = system.actorSelection("akka.tcp://typedsql-server@127.0.0.1:39114/user/listener")
+  val remoteActor = system.actorSelection("akka.tcp://typedsql-intellij-server@127.0.0.1:39114/user/listener")
   import akka.util.Timeout, Timeout._
   implicit val timeout: Timeout = 15 seconds
 

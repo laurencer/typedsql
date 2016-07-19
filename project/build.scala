@@ -44,7 +44,7 @@ object build extends Build {
         publishArtifact := false,
         onLoad in Global := ((s: State) => { "updateIdea" :: s}) compose (onLoad in Global).value
       )
-    , aggregate = Seq(core, intellij, server, api)
+    , aggregate = Seq(core, intellij, intellijServer, intellijApi)
   )
 
   lazy val core = Project(
@@ -74,11 +74,11 @@ object build extends Build {
       )
   )
 
-  lazy val server = Project(
-    id = "server",
-    base = file("server"),
+  lazy val intellijServer = Project(
+    id = "intellij-server",
+    base = file("intellij-server"),
     settings = standardSettings ++
-      uniform.project("typedsql-server", "com.rouesnel.typedsql.server") ++
+      uniform.project("typedsql-intellij-server", "com.rouesnel.typedsql.intellij.server") ++
       Seq(
         conflictManager := ConflictManager.default,
         libraryDependencies ++=
@@ -125,11 +125,11 @@ object build extends Build {
           assembledJar
         }
       )
-  ).dependsOn(core, api)
+  ).dependsOn(core, intellijApi)
 
-  lazy val api = Project(
-    id = "api",
-    base = file("api"),
+  lazy val intellijApi = Project(
+    id = "intellij-api",
+    base = file("intellij-api"),
     settings = standardSettings ++
       uniform.project("typedsql-api", "com.rouesnel.typedsql.api")
   )
@@ -178,8 +178,8 @@ object build extends Build {
           val pluginJar = assembly.value
           val sources = Seq(
             pluginJar               -> s"$pluginName/lib/${pluginJar.getName}",
-            (assembly in cli).value -> s"$pluginName/bin/cli.jar"
-          ) ++ (assemblyExcludedJars in (cli, assembly)).value.map(jar => {
+            (assembly in intellijServer).value -> s"$pluginName/bin/server.jar"
+          ) ++ (assemblyExcludedJars in (intellijServer, assembly)).value.map(jar => {
             jar.data -> s"$pluginName/bin/${jar.data.getName}"
           })
           val out = target.value / s"$pluginName-plugin.zip"
@@ -187,7 +187,7 @@ object build extends Build {
           out
         }
     )
-  ).enablePlugins(SbtIdeaPlugin).dependsOn(api)
+  ).enablePlugins(SbtIdeaPlugin).dependsOn(intellijApi)
   lazy val packagePlugin = TaskKey[File]("package-plugin", "Create plugin's zip file ready to load into IDEA")
 
   lazy val ideaRunner: Project = project.in(file("ideaRunner"))

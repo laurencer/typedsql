@@ -1,4 +1,4 @@
-package com.rouesnel.typedsql.server
+package com.rouesnel.typedsql.intellij.server
 
 import akka.actor._
 
@@ -14,7 +14,7 @@ import scala.collection.immutable.ListMap
 import scalaz._
 
 object CompilationServer extends App {
-  implicit val system = ActorSystem("typedsql-server")
+  implicit val system = ActorSystem("typedsql-intellij-server")
   val listener = system.actorOf(Props[Listener], name = "listener")
 }
 
