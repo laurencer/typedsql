@@ -76,7 +76,7 @@ object SqlQuery {
           val outputRecordFields = schema.getFieldSchemas.asScala.map(fieldSchema => {
             val fieldName = fieldSchema.getName
             val fieldType =
-              HiveQuery.parseHiveType(fieldSchema.getType)
+              HiveType.parseHiveType(fieldSchema.getType)
                   .fold(missingType => c.abort(c.enclosingPosition, s"Could not find Scala type to match Hive type ${missingType} (in ${fieldSchema.getType}) for column ${fieldName}"), identity)
             (fieldName, fieldType)
           }).toList
@@ -93,13 +93,13 @@ object SqlQuery {
               }})
             .groupBy({ case (parent, (fieldName, fieldType)) => parent })
             .mapValues(_.map({ case (parent, fieldInfo) => fieldInfo }))
-            .mapValues(fields => HiveQuery.StructType(ListMap(fields: _*)))
+            .mapValues(fields => StructType(ListMap(fields: _*)))
 
           // Find all the structs to generate appropriate types.
           val structs = outputRecordFields
             .flatMap({ case (_, hiveType) => hiveType.allTypes })
             .toList
-            .collect({ case struct: HiveQuery.StructType => struct})
+            .collect({ case struct: StructType => struct})
 
           // Map the nested structs to the generated ones and remove any nested fields
           val fieldsToGenerate = outputRecordFields
@@ -109,7 +109,7 @@ object SqlQuery {
             })
 
           // Make the returned row itself a struct for simplicity/elegance.
-          val outputRecord = HiveQuery.StructType(ListMap(fieldsToGenerate: _*))
+          val outputRecord = StructType(ListMap(fieldsToGenerate: _*))
 
           // Compose all of the structs together.
           val allStructs = (outputRecord +: (implicitStructs.values.toList ++ structs))
@@ -122,23 +122,23 @@ object SqlQuery {
             else TypeName(s"Struct${idx}")
 
 
-          def resolveType(fieldType: HiveQuery.HiveType): Tree = fieldType match {
-            case p: HiveQuery.PrimitiveType[_]          => p.scalaType(c)
-            case HiveQuery.ArrayType(valueType)         => tq"List[${resolveType(valueType)}]"
-            case HiveQuery.MapType(keyType, valueType)  => tq"Map[${resolveType(keyType)}, ${resolveType(valueType)}]"
-            case s: HiveQuery.StructType                => tq"${structName(allStructs(s))}"
+          def resolveType(fieldType: HiveType): Tree = fieldType match {
+            case p: PrimitiveType[_]          => p.scalaType(c)
+            case ArrayType(valueType)         => tq"List[${resolveType(valueType)}]"
+            case MapType(keyType, valueType)  => tq"Map[${resolveType(keyType)}, ${resolveType(valueType)}]"
+            case s: StructType                => tq"${structName(allStructs(s))}"
           }
 
-          def hiveTypeToThriftTypeName(typ: HiveQuery.HiveType): TermName = typ match {
-            case p: HiveQuery.PrimitiveType[_] => TermName(p.thriftTypeName)
-            case m: HiveQuery.MapType          => TermName("MAP")
-            case l: HiveQuery.ArrayType        => TermName("LIST")
-            case s: HiveQuery.StructType       => TermName("STRUCT")
+          def hiveTypeToThriftTypeName(typ: HiveType): TermName = typ match {
+            case p: PrimitiveType[_] => TermName(p.thriftTypeName)
+            case m: MapType          => TermName("MAP")
+            case l: ArrayType        => TermName("LIST")
+            case s: StructType       => TermName("STRUCT")
           }
 
-          def hiveTypeToReadMethod(typ: HiveQuery.HiveType): Tree = typ match {
-            case p: HiveQuery.PrimitiveType[_] => q"_iprot.${TermName("read" + p.thriftTypeName.toLowerCase.capitalize)}"
-            case s: HiveQuery.StructType       => q"${structName(allStructs(s)).toTermName}.decode(_iprot)"
+          def hiveTypeToReadMethod(typ: HiveType): Tree = typ match {
+            case p: PrimitiveType[_] => q"_iprot.${TermName("read" + p.thriftTypeName.toLowerCase.capitalize)}"
+            case s: StructType       => q"${structName(allStructs(s)).toTermName}.decode(_iprot)"
           }
 
           def buildMapDecode(keyType: Tree, valueType: Tree, readKey: Tree, readValue: Tree) = {
@@ -183,14 +183,14 @@ object SqlQuery {
             """
           }
 
-          def buildThriftDecode(structIdx: Int, fields: List[(String, HiveQuery.HiveType)]) = {
+          def buildThriftDecode(structIdx: Int, fields: List[(String, HiveType)]) = {
             def readMethodName(fieldName: String) = TermName("read" + fieldName.capitalize + "Value")
 
-            def readerForType(hiveType: HiveQuery.HiveType): Tree = hiveType match {
-              case p: HiveQuery.PrimitiveType[_] => hiveTypeToReadMethod(hiveType)
-              case m: HiveQuery.MapType          => buildMapDecode(resolveType(m.key), resolveType(m.value), readerForType(m.key), readerForType(m.value))
-              case a: HiveQuery.ArrayType        => buildArrayDecode(resolveType(a.valueType), readerForType(a.valueType))
-              case s: HiveQuery.StructType       => q"${structName(allStructs(s)).toTermName}.decode(_iprot)"
+            def readerForType(hiveType: HiveType): Tree = hiveType match {
+              case p: PrimitiveType[_] => hiveTypeToReadMethod(hiveType)
+              case m: MapType          => buildMapDecode(resolveType(m.key), resolveType(m.value), readerForType(m.key), readerForType(m.value))
+              case a: ArrayType        => buildArrayDecode(resolveType(a.valueType), readerForType(a.valueType))
+              case s: StructType       => q"${structName(allStructs(s)).toTermName}.decode(_iprot)"
             }
 
             // Methods for reading each field.
@@ -203,7 +203,7 @@ object SqlQuery {
             // Mutable placeholder fields used to store each field as its read.
             val placeholderFields = fields.map({ case (fieldName, hiveType) => {
               val placeholderValue = hiveType match {
-                case p: HiveQuery.PrimitiveType[_] => p.placeholderValue(c)
+                case p: PrimitiveType[_] => p.placeholderValue(c)
                 case _ => q"null"
               }
               q"var ${TermName(fieldName)}: ${resolveType(hiveType)} = ${placeholderValue}"
@@ -267,12 +267,12 @@ object SqlQuery {
           // Generate structs
           val generatedStructs = allStructs.map({ case (struct, idx) => {
             val fields = struct.fields.toList.map({ case (fieldName, fieldType) =>
-              q"${TermName(HiveQuery.camelCaseField(fieldName))}: ${resolveType(fieldType)}"
+              q"${TermName(HiveType.camelCaseFieldName(fieldName))}: ${resolveType(fieldType)}"
             })
             val thriftFields = struct.fields.toList.zipWithIndex.flatMap({ case ((fieldName, fieldType), idx) =>
               List(q"""
-                val ${TermName(HiveQuery.camelCaseField(fieldName).capitalize + "Field")} = new org.apache.thrift.protocol.TField(${Literal(Constant(fieldName))}, org.apache.thrift.protocol.TType.${hiveTypeToThriftTypeName(fieldType)}, ${Literal(Constant(idx + 1))})""",
-                q"""val ${TermName(HiveQuery.camelCaseField(fieldName).capitalize + "FieldManifest")} = implicitly[Manifest[${resolveType(fieldType)}]]""")
+                val ${TermName(HiveType.camelCaseFieldName(fieldName).capitalize + "Field")} = new org.apache.thrift.protocol.TField(${Literal(Constant(fieldName))}, org.apache.thrift.protocol.TType.${hiveTypeToThriftTypeName(fieldType)}, ${Literal(Constant(idx + 1))})""",
+                q"""val ${TermName(HiveType.camelCaseFieldName(fieldName).capitalize + "FieldManifest")} = implicitly[Manifest[${resolveType(fieldType)}]]""")
             })
 
             // Include the ttypeToHuman method (needed for constructing decoders)

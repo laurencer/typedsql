@@ -9,8 +9,6 @@ import scala.reflect.macros.whitebox
 class SourceMapping(c: whitebox.Context) {
   import c.universe._
 
-  import HiveQuery._
-
   def listMap[K, V](els: Seq[(K, V)]): ListMap[K, V] = ListMap(els: _*)
 
   private val seqType     = c.weakTypeOf[Seq[_]]

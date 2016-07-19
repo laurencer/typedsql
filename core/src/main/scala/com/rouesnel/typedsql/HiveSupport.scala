@@ -1,30 +1,13 @@
 package com.rouesnel.typedsql
 
 import java.io.File
-import java.util.Date
 
-import scala.util.control.NonFatal
-import scala.collection.immutable.ListMap
-import org.apache.hadoop.hive.ql.parse._
-
-import scalaz._
-import Scalaz._
-import scala.annotation.StaticAnnotation
-import scala.language.experimental.macros
-import scala.annotation.compileTimeOnly
-import scala.reflect.macros._
-import au.com.cba.omnia.omnitool.{Result, ResultantMonad, ResultantOps, ToResultantMonadOps}
-import org.apache.hadoop.fs.FileSystem
-import org.apache.hadoop.hive.conf.HiveConf
-import org.apache.hadoop.hive.metastore.api._
-import org.apache.hadoop.hive.ql.Driver
-import org.apache.hadoop.hive.ql.session.SessionState
-
-import scala.collection.convert.decorateAsScala._
 import scala.concurrent._
-import duration._
-import scala.reflect.ClassTag
-import scala.util.Random
+import scala.language.experimental.macros
+
+import org.apache.hadoop.hive.conf.HiveConf
+
+import scalaz._, Scalaz._
 
 /** Provides functions to support a fake Hive environment */
 object HiveSupport {

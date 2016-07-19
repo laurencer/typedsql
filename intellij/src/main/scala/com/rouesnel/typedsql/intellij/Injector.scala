@@ -1,24 +1,23 @@
 package com.rouesnel.typedsql.intellij
 
-
 import java.io.File
-import java.lang.{Boolean, Double, Long}
-import java.time.Duration
-import java.util
-import java.util.Map.Entry
+
+import scala.concurrent.Await
+import scala.concurrent.duration._
 
 import akka.actor._
 import akka.pattern.ask
+
 import com.intellij.openapi.diagnostic.Logger
-import com.typesafe.config.{ConfigMemorySize, ConfigObject, ConfigResolveOptions, _}
+
+import com.typesafe.config._
+
 import org.jetbrains.plugins.scala.lang.psi.api.base.ScLiteral
 import org.jetbrains.plugins.scala.lang.psi.api.statements.{ScFunctionDefinition, ScValue}
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.templates.{ScExtendsBlock, ScTemplateBody}
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef._
 import org.jetbrains.plugins.scala.lang.psi.impl.toplevel.typedef.SyntheticMembersInjector
 
-import scala.concurrent.Await
-import scala.concurrent.duration._
 import com.rouesnel.typedsql.api._
 
 object CliHelper {
@@ -44,9 +43,8 @@ object CliHelper {
 
     val jars = binDirectory.listFiles().toList
 
-    s"java -cp ${jars.mkString(":")} com.rouesnel.typedsql.cli.CompilationServer".run()
+    s"java -cp ${jars.mkString(":")} com.rouesnel.typedsql.server.CompilationServer".run()
   }
-
 }
 
 class Injector extends SyntheticMembersInjector {
@@ -99,7 +97,7 @@ class Injector extends SyntheticMembersInjector {
       |  }
       |}
     """.stripMargin).withFallback(DefaultAkkaConfig.config).resolve()) }
-  val remoteActor = system.actorSelection("akka.tcp://typedsql-cli@127.0.0.1:39114/user/listener")
+  val remoteActor = system.actorSelection("akka.tcp://typedsql-server@127.0.0.1:39114/user/listener")
   import akka.util.Timeout, Timeout._
   implicit val timeout: Timeout = 15 seconds
 
@@ -146,6 +144,11 @@ class Injector extends SyntheticMembersInjector {
   }
 }
 
+/**
+ * The default Akka config is injected here programmatically because there are ample opportunities
+ * for the Java resources to get mangled (e.g. on building a fat JAR or by IntelliJ's plugin
+ * loader).
+ */
 object DefaultAkkaConfig {
   def config = ConfigFactory.parseString(text)
   def text =

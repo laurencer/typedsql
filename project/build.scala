@@ -44,7 +44,7 @@ object build extends Build {
         publishArtifact := false,
         onLoad in Global := ((s: State) => { "updateIdea" :: s}) compose (onLoad in Global).value
       )
-    , aggregate = Seq(core, intellij, cli)
+    , aggregate = Seq(core, intellij, server, api)
   )
 
   lazy val core = Project(
@@ -74,11 +74,11 @@ object build extends Build {
       )
   )
 
-  lazy val cli = Project(
-    id = "cli",
-    base = file("cli"),
+  lazy val server = Project(
+    id = "server",
+    base = file("server"),
     settings = standardSettings ++
-      uniform.project("typedsql-cli", "com.rouesnel.typedsql") ++
+      uniform.project("typedsql-server", "com.rouesnel.typedsql.server") ++
       Seq(
         conflictManager := ConflictManager.default,
         libraryDependencies ++=

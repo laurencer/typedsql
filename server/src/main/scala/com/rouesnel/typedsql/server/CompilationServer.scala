@@ -1,4 +1,4 @@
-package com.rouesnel.typedsql.cli
+package com.rouesnel.typedsql.server
 
 import akka.actor._
 
@@ -14,7 +14,7 @@ import scala.collection.immutable.ListMap
 import scalaz._
 
 object CompilationServer extends App {
-  implicit val system = ActorSystem("typedsql-cli")
+  implicit val system = ActorSystem("typedsql-server")
   val listener = system.actorOf(Props[Listener], name = "listener")
 }
 
@@ -30,7 +30,7 @@ class Listener extends Actor {
         val rawSqlText = cr.query.trim.replaceAll("\\n", " ")
         /** IntelliJ includes the surrounding quotes. This removes them. */
         val sqlText = rawSqlText.dropWhile(_ == '"').reverse.dropWhile(_ == '"').reverse
-        HiveQuery.compileQuery(conf, sqlText).flatMap(Converter.produceCaseClass(_, "Row")).fold(
+        HiveQuery.compileQuery(conf, Map.empty, sqlText).flatMap(Converter.produceCaseClass(_, "Row")).fold(
           error  => throw error,
           generatedCaseClass => CompilationResponse(generatedCaseClass)
         )
@@ -48,11 +48,11 @@ class Listener extends Actor {
 }
 
 object Converter {
-  def hiveTypeToScalaType(hiveType: HiveQuery.HiveType): String = hiveType match {
-    case p: HiveQuery.PrimitiveType[_] => p.scalaTypeName
-    case m: HiveQuery.MapType          => s"scala.collection.Map[${hiveTypeToScalaType(m.key)}, ${hiveTypeToScalaType(m.value)}]"
-    case l: HiveQuery.ArrayType        => s"scala.collection.List[${hiveTypeToScalaType(l.valueType)}]"
-    case s: HiveQuery.StructType       => {
+  def hiveTypeToScalaType(hiveType: HiveType): String = hiveType match {
+    case p: PrimitiveType[_] => p.scalaTypeName
+    case m: MapType          => s"scala.collection.Map[${hiveTypeToScalaType(m.key)}, ${hiveTypeToScalaType(m.value)}]"
+    case l: ArrayType        => s"scala.collection.List[${hiveTypeToScalaType(l.valueType)}]"
+    case s: StructType       => {
       val structuralTypeFields = s.camelCasedFields.toList.map({ case (fieldName, hiveType) => {
         s"def ${fieldName}: ${hiveTypeToScalaType(hiveType)}"
       }}).mkString("; ")
@@ -65,7 +65,7 @@ object Converter {
     val outputRecordFields = schema.getFieldSchemas.asScala.map(fieldSchema => {
       val fieldName = fieldSchema.getName
       val fieldType =
-        HiveQuery.parseHiveType(fieldSchema.getType)
+        HiveType.parseHiveType(fieldSchema.getType)
           .fold(missingType => throw new Exception(s"Missing type: $missingType"), identity)
       (fieldName, fieldType)
     })
@@ -82,10 +82,10 @@ object Converter {
       }})
       .groupBy({ case (parent, (fieldName, fieldType)) => parent })
       .mapValues(_.map({ case (parent, fieldInfo) => fieldInfo }))
-      .mapValues(fields => HiveQuery.StructType(ListMap(fields: _*)))
+      .mapValues(fields => StructType(ListMap(fields: _*)))
 
     // Map the nested structs to the generated ones and remove any nested fields
-    val fieldsToGenerate = HiveQuery.StructType(ListMap(outputRecordFields
+    val fieldsToGenerate = StructType(ListMap(outputRecordFields
       .filter({ case (fieldName, _) => !fieldName.contains(".") }) ++
       implicitStructs.toList.map({ case (fieldNameParts, fieldStruct) =>
         fieldNameParts.mkString(".") -> fieldStruct
