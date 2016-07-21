@@ -33,10 +33,11 @@ object HiveQuery {
    * Compiles a Hive Query and returns the Hive Schema
    * @param hiveConf conf corresponding to a local instance (see HiveSupport)
    * @param sources the other tables/schemas that should be available
+   * @param parameterVariables map of parameter names to default values to use for compilation
    * @param query query to compile
    * @return error or the compiled Hive Schema
    */
-  def compileQuery(hiveConf: HiveConf, sources: Map[String, StructType], query: String): Throwable \/ Schema = HiveSupport.useHiveClassloader {
+  def compileQuery(hiveConf: HiveConf, sources: Map[String, StructType], parameterVariables: Map[String, String], query: String): Throwable \/ Schema = HiveSupport.useHiveClassloader {
     SessionState.start(hiveConf)
     SessionState.get().setIsSilent(true)
     val dbName = s"test_${new Date().getTime}"
@@ -46,11 +47,14 @@ object HiveQuery {
       createCompilationEnvironment(dbName, hiveConf, sources)
 
       // Initialise the variable substitution
-      val variables =
+      val sourceVariables =
         sources
           .keys
           .map(tableName => tableName -> s"${dbName}.${tableName}")
           .toMap
+
+      val variables =
+          (sourceVariables ++ parameterVariables)
           .asJava
 
       SessionState.get().setHiveVariables(variables)

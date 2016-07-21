@@ -30,7 +30,7 @@ class Listener extends Actor {
         val rawSqlText = cr.query.trim.replaceAll("\\n", " ")
         /** IntelliJ includes the surrounding quotes. This removes them. */
         val sqlText = rawSqlText.dropWhile(_ == '"').reverse.dropWhile(_ == '"').reverse
-        HiveQuery.compileQuery(conf, Map.empty, sqlText).flatMap(Converter.produceCaseClass(_, "Row")).fold(
+        HiveQuery.compileQuery(conf, Map.empty, Map.empty, sqlText).flatMap(Converter.produceCaseClass(_, "Row")).fold(
           error  => throw error,
           generatedCaseClass => CompilationResponse(generatedCaseClass)
         )

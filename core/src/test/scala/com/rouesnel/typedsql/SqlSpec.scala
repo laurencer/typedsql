@@ -1,28 +1,27 @@
 package com.rouesnel.typedsql
 
-import au.com.cba.omnia.ebenezer.ParquetLogging
-import au.com.cba.omnia.ebenezer.test.ParquetThermometerRecordReader
-import au.com.cba.omnia.ebenezer.scrooge.ParquetScroogeSource
-import com.rouesnel.typedsql.Person
-import com.twitter.scalding.Job
-import org.joda.time.DateTime
-import org.specs2._
-import org.scalacheck.Arbitrary
-import org.scalacheck.Gen.alphaStr
-import org.scalacheck.Prop.forAll
+import java.util.Date
 
-import scala.util.Failure
-import au.com.cba.omnia.thermometer.core.{Thermometer, ThermometerRecordReader}, Thermometer._
+import au.com.cba.omnia.ebenezer.ParquetLogging
+import au.com.cba.omnia.ebenezer.scrooge.ParquetScroogeSource
+import au.com.cba.omnia.thermometer.core.{Thermometer, ThermometerRecordReader}
+import Thermometer._
 import au.com.cba.omnia.thermometer.fact.PathFactoids.{exists, missing, records}
 import au.com.cba.omnia.thermometer.hive.ThermometerHiveSpec
+import com.rouesnel.typedsql.DataSource.Config
+import com.twitter.scalding.typed.IterablePipe
+
+import scala.util.Random
 
 @SqlQuery object SqlQueryTypeTest {
-  def sources = Map(
-    "test_struct" -> NestedStructTest,
-    "people"      -> com.rouesnel.typedsql.Person,
-    "test"        -> ManualSqlStruct,
-    "my_people"   -> Person
-  )
+
+  case class Sources(//testStruct: DataSource[NestedStructTest],
+                     people: DataSource[com.rouesnel.typedsql.Person],
+                     test: DataSource[ManualSqlStruct],
+                     myPeople: DataSource[Person]
+                    )
+
+  case class Parameters(minimumAge: Int)
 
   def query =
     """
@@ -32,15 +31,18 @@ import au.com.cba.omnia.thermometer.hive.ThermometerHiveSpec
             map("key", 1.0, "key2", 2) as map_value,
             struct(1.0, "stringvalue", 0) as struct_value,
             named_struct("field_name", 1, "field2", 2) as named_struct_value
+      FROM ${people}
+      WHERE age > ${minimumAge}
     """
   // TODO - array's don't work yet: array(1, 2, 3, 4) as arrayValue
 
 }
 
 @SqlQuery object ChainedTest {
-  def sources = Map(
-    "upstream" -> SqlQueryTypeTest.Row
-  )
+
+  case class Parameters()
+
+  case class Sources(upstream: DataSource[SqlQueryTypeTest.Row])
 
   def query =
     """
@@ -48,49 +50,42 @@ import au.com.cba.omnia.thermometer.hive.ThermometerHiveSpec
       FROM ${upstream}
       GROUP BY int_value
     """
-  // TODO - array's don't work yet: array(1, 2, 3, 4) as arrayValue
-
 }
 
 
 class SqlSpec extends ThermometerHiveSpec with ParquetLogging { def is = s2"""
   Basic tests $basic
 """
-  import au.com.cba.omnia.beeswax.Hive
   def basic = {
-    println(Hive.createDatabase("test_db").run(hiveConf))
-
-    // Create the environment tables.
-    Hive.createParquetTable[Person]("test_db", "p", Nil).run(hiveConf)
-    Hive.createParquetTable[ManualSqlStruct]("test_db", "t", Nil).run(hiveConf)
-    Hive.createParquetTable[Person]("test_db", "mp", Nil).run(hiveConf)
-
-    val substitutionPattern = "\\$\\{[^\\}\\$\u0020]+\\}".r
-
-    def substitute(query: String): String = {
-      substitutionPattern.replaceSomeIn(query, variable => {
-        variable.matched match {
-          case "${people}" => Some("test_db.p")
-          case _  => None
-        }
-      })
-    }
-
-    println(Hive.query(
-      s"""
-        CREATE TABLE test_db.output
-        STORED AS PARQUET
-        LOCATION '${dir}/test'
-        AS ${substitute(SqlQueryTypeTest.query)}
-      """).run(hiveConf))
+    def testConfig = Config(
+      hiveConf,
+      _ => "typedsql_tmp" + "." + new Date().getTime + "_" + math.abs(Random.nextLong()),
+      _ => "typedsql_tmp" + "." + new Date().getTime + "_" + math.abs(Random.nextLong()),
+      _ => s"${testDir.resolve("tmp")}/typedsql_tmp/${new Date().getTime}_${math.abs(Random.nextLong())}"
+    )
 
 
-    println("GENERATED!")
+    val sqlDataSource: DataSource[SqlQueryTypeTest.Row] = SqlQueryTypeTest(
+      SqlQueryTypeTest.Sources(
+        //TypedPipeDataSource(IterablePipe[NestedStructTest](Nil)),
+        TypedPipeDataSource(IterablePipe[Person](List(Person("Bob", "Brown", 28)))),
+        TypedPipeDataSource(IterablePipe[ManualSqlStruct](Nil)),
+        TypedPipeDataSource(IterablePipe[Person](Nil))
+      ),
+      SqlQueryTypeTest.Parameters(18)
+    )
 
-    import com.twitter.scalding.TDsl._
-    val result = executesSuccessfully(ParquetScroogeSource[SqlQueryTypeTest.Row](s"${dir}/test")
-      .map(a => { println(a); a })
-      .toIterableExecution
+    val chainedDataSource = ChainedTest(
+      ChainedTest.Sources(sqlDataSource),
+      ChainedTest.Parameters()
+    )
+
+    val result = executesSuccessfully[Iterable[SqlQueryTypeTest.Row]](
+      sqlDataSource.toTypedPipe(testConfig).flatMap(tp => tp.map(a => {println(a); a}).toIterableExecution)
+    )
+
+    val resultChained = executesSuccessfully[Iterable[ChainedTest.Row]](
+      chainedDataSource.toTypedPipe(testConfig).flatMap(tp => tp.map(a => {println(a); a}).toIterableExecution)
     )
 
     println()

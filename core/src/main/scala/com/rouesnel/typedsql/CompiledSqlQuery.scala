@@ -2,7 +2,7 @@ package com.rouesnel.typedsql
 
 import java.util.Date
 
-import com.twitter.scrooge.ThriftStructCodec3
+import com.twitter.scrooge.{ThriftStruct, ThriftStructCodec3}
 
 import scala.util.Random
 import scala.util.Random
@@ -14,11 +14,6 @@ object CompiledSqlQuery {
 }
 
 trait CompiledSqlQuery {
-  import CompiledSqlQuery._
-
-  /** A tuple of tuples */
-  def sources: Sources
-
   /** The HiveQL - note this must be a string literal */
   def query: String
 
@@ -26,31 +21,18 @@ trait CompiledSqlQuery {
   def partitions: List[(String, String)] = Nil
 
   /** Source datasets inside the query */
-  type Sources = Map[String, ThriftStructCodec3[_]]
+  abstract class Sources
 
   /** Configuration parameters available inside the query */
-  type Configuration
+  abstract class Parameters
 
   /** Output type for each row returned by the query */
-  type Row
-
-  /*
-  def toTypedPipe(): Hive[TypedPipe[Row]] = {
-    val tableName = tmpTableName()
-   Hive.query(
-     s"""
-       |CREATE TABLE ${tmpDatabase}.${tableName}
-       |STORED AS PARQUET
-       |LOCATION '${tmpHdfsPath}/${tableName}'
-       |AS $query
-     """.stripMargin
-   ).rMap(result => {
-     TypedPipe.from(ParquetScroogeSource[Row](
-       s"${tmpHdfsPath}/${tableName}"
-
-     ))
-   })
-    ???
-  }
-  */
+  abstract class Row extends ThriftStruct
 }
+
+object SqlParameter {
+  def write[T](value: T)(implicit writer: SqlParameter[T]) = writer.write(value)
+  implicit def string = SqlParameter[String](value => "\"" + value + "\"")
+  implicit def int    = SqlParameter[Int](value => value.toString)
+}
+case class SqlParameter[T](write: T => String)

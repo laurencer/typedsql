@@ -59,14 +59,12 @@ object build extends Build {
         //conflictManager := ConflictManager.default,
         libraryDependencies ++=
           depend.hadoopClasspath ++
-          depend.omnia("maestro-test", maestroVersion, "test") ++
-          depend.omnia("beeswax", "0.1.1-20160120052815-6bf77d2") ++
+          depend.omnia("ebenezer", "0.22.2-20160619063420-4eb964f") ++
           depend.parquet() ++
           depend.testing() ++
           depend.logging() ++
           depend.hadoop() ++
           depend.hive() ++
-          depend.omnia("maestro-test", maestroVersion, "test") ++
           Seq(
             "au.com.cba.omnia" %% "thermometer-hive" %  "1.4.2-20160414053315-99c196d",
             "ch.qos.logback"    % "logback-classic"  % "1.0.13"

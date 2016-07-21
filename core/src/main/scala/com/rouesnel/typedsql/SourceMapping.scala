@@ -80,31 +80,23 @@ class SourceMapping(c: whitebox.Context) {
     })))
   }
 
-  def readSourcesField(objectBody: Seq[Trees#Tree]): Map[String, StructType] = {
+  def readSourcesClass(objectBody: Seq[Trees#Tree]): Map[String, StructType] = {
     objectBody.collect({
-      case q"def sources = ${sources}" => sources
+      case q"case class Sources(..${fields})" => fields
     }).headOption
-      .fold(Map.empty[String, StructType])({
-      // It's easy to get the args of a tuple constructor as a flat list - so we pattern
-      // match it here.
-      case Apply(Ident(TermName("Map")), args) => {
-        args.map({
-          case q"${Literal(Constant(name))} -> ${objectType}" => {
-            println(s"${name} -> ${objectType}")
-            val typeChecked = c.typecheck(objectType, c.TYPEmode)
-            val tpe = Option(typeChecked.tpe).getOrElse(c.abort(c.enclosingPosition, "Could not determine type of " + objectType.toString()))
-            // Ensure its a ThriftStructCodec3
-            if (! tpe.weak_<:<(c.typecheck(tq"com.twitter.scrooge.ThriftStructCodec3[_]", c.TYPEmode).tpe)) {
-              c.abort(c.enclosingPosition, s"${objectType} must be a subtype of ThriftStructCodec3[_]")
-            }
-
-            val cleanedFields = mapObjectTypeToHiveSchema(tpe)
-            name.toString -> cleanedFields
+      .fold(Map.empty[String, StructType])(_.map({
+        case q"$mods val ${name}: DataSource[${objectType}]" => {
+          val typeChecked = c.typecheck(objectType, c.TYPEmode)
+          val tpe = Option(typeChecked.tpe.companion).getOrElse(c.abort(c.enclosingPosition, "Could not determine type of " + objectType.toString()))
+          // Ensure its a ThriftStructCodec3
+          if (! tpe.weak_<:<(c.typecheck(tq"com.twitter.scrooge.ThriftStructCodec3[_]", c.TYPEmode).tpe)) {
+            c.abort(c.enclosingPosition, s"${objectType} must be a subtype of ThriftStructCodec3[_]")
           }
-          case other => c.abort(c.enclosingPosition, "A string literal must be used for the mapping name with the arrow operator (e.g. `\"my_table\" -> MyTableRow`. Instead found: " + other.toString())
-        }).toMap
-      }
-      case other => c.abort(c.enclosingPosition, "Source function must be a tuple of (String -> Object tuples). Instead found: " + showRaw(other))
-    })
+
+          val cleanedFields = mapObjectTypeToHiveSchema(tpe)
+          name.toString -> cleanedFields
+        }
+        case other => c.abort(c.enclosingPosition, s"Fields of the case class must have type DataSource[T <: ThriftStruct]. Instead found $other")
+    }).toMap)
   }
 }

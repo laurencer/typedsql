@@ -1,30 +1,14 @@
 package com.rouesnel.typedsql
 
-import java.io.File
-import java.util.Date
-
-import scala.util.control.NonFatal
-import scala.collection.immutable.ListMap
-import org.apache.hadoop.hive.ql.parse._
-
-import scalaz._
-import Scalaz._
-import scala.annotation.StaticAnnotation
-import scala.language.experimental.macros
 import scala.annotation.compileTimeOnly
-import scala.reflect.macros._
-import au.com.cba.omnia.omnitool.{Result, ResultantMonad, ResultantOps, ToResultantMonadOps}
-import org.apache.hadoop.fs.FileSystem
-import org.apache.hadoop.hive.conf.HiveConf
-import org.apache.hadoop.hive.metastore.api._
-import org.apache.hadoop.hive.ql.Driver
-import org.apache.hadoop.hive.ql.session.SessionState
-
+import scala.annotation.StaticAnnotation
 import scala.collection.convert.decorateAsScala._
-import scala.concurrent._
-import duration._
-import scala.reflect.ClassTag
-import scala.util.Random
+import scala.collection.immutable.ListMap
+import scala.concurrent._, duration._
+import scala.language.experimental.macros
+import scala.reflect.macros._
+
+import scalaz._, Scalaz._
 
 @compileTimeOnly("enable macro paradise to expand macro annotations")
 class SqlQuery extends StaticAnnotation {
@@ -42,6 +26,8 @@ object SqlQuery {
   def impl(c: whitebox.Context)(annottees: c.Expr[Any]*): c.Expr[Any] = {
     import c.universe._
     val sourceMapping = new SourceMapping(c)
+    val parameterMapping = new ParameterMapping(c)
+
     val result = {
       annottees.map(_.tree).toList match {
         case q"$mods object $tpname extends ..$parents { ..$stats }" :: Nil => {
@@ -59,17 +45,20 @@ object SqlQuery {
             c.abort(c.enclosingPosition, s"Only a single SQL statement is supported. Please remove any ';'s from $sqlLiteral")
           }
 
-          // Try to parse and exit here first.
-          // This is quicker than compiling and ensures only a SELECT statement is used
-          // rather than any DDL statements.
-          //HiveQuery.parseSelect(sqlStatement)
-          // .fold(c.abort(c.enclosingPosition, _), identity)
-
           // Get sources and create temp tables mapping to them.
-          val sources = sourceMapping.readSourcesField(stats)
+          val sources = sourceMapping.readSourcesClass(stats)
+
+          // Get the parameters.
+          val parameters = parameterMapping.readParametersClass(stats)
+
+          // Check no overlap between parameter and source names (they share the same namespace)
+          val parametersSourcesIntersection = sources.keySet.intersect(parameters.keySet)
+          if (parametersSourcesIntersection.nonEmpty) {
+            c.abort(c.enclosingPosition, s"Parameters and Sources classes cannot have fields with the same names. Please remove/rename the following duplicates: ${parametersSourcesIntersection.mkString(", ")}")
+          }
 
           // Retrieve the schema from the compiled query.
-          val schema = HiveQuery.compileQuery(hiveConf, sources, sqlStatement)
+          val schema = HiveQuery.compileQuery(hiveConf, sources, parameters, sqlStatement)
             .fold(ex => c.abort(c.enclosingPosition, ex.toString), identity)
 
           // Parse the types from the schema.
@@ -322,11 +311,29 @@ object SqlQuery {
             )
           }}).toList.flatten
 
+          def readParametersAsMap(sourcesObjectName: String, fields: Iterable[String]) = {
+            val literals = fields.toList.map(parameterName => {
+              q"${Literal(Constant(parameterName))} -> com.rouesnel.typedsql.SqlParameter.write(${TermName(sourcesObjectName)}.${TermName(parameterName)})"
+            })
+            q"Map(..${literals})"
+          }
+
+          def readSourcesAsMap(sourcesObjectName: String, fields: Iterable[String]) = {
+            val literals = fields.toList.map(parameterName => {
+              q"${Literal(Constant(parameterName))} -> ${TermName(sourcesObjectName)}.${TermName(parameterName)}"
+            })
+            q"Map(..${literals})"
+          }
+
           val amendedParents = parents :+ tq"CompiledSqlQuery"
           q"""$mods object $tpname extends ..$amendedParents {
             ..$stats
 
             ..${generatedStructs}
+
+            def apply(srcs: Sources, params: Parameters): com.rouesnel.typedsql.DataSource[Row] = {
+             HiveQueryDataSource[Row](query, ${readParametersAsMap("params", parameters.keys)}, ${readSourcesAsMap("srcs", sources.keys)})
+            }
           }"""
 
         }

@@ -9,10 +9,15 @@ By adding the `@SqlQuery` annotation to an object, TypedSQL will generate a [Par
 ```scala
 
 @SqlQuery object TransactionSummary {
-  def sources = Map(
-    "transactions" -> Transaction,
-    "accounts"     -> ProductAccount,
-    "customers"    -> Customer
+  case class Sources(
+    transactions: DataSource[Transaction],
+    accounts:     DataSource[ProductAccount],
+    customers:    DataSource[Customer]
+  )
+
+  case class Parameters(
+    transactionType: String,
+    year:            Int
   )
 
   def query =
@@ -24,14 +29,14 @@ By adding the `@SqlQuery` annotation to an object, TypedSQL will generate a [Par
       FROM ${transactions} t
         INNER JOIN ${accounts} a ON t.account_id = a.id
         INNER JOIN ${customers} c ON a.primary_customer_id = c.id
-      WHERE t.type = "Credit"
+      WHERE t.type = ${transactionType} AND t.year = ${year}
       GROUP BY c.id, MONTH(t.date)
     """
 }
 
 ```
 
-The `query` is checked for validity at compile time (e.g. if you have a syntax error or reference an invalid source then it will be caught by the Scala compiler).
+The `query` is checked for validity at compile time (e.g. if you have a syntax error or reference an invalid source/parameter then it will be caught by the Scala compiler).
 
 The macro also adds a new case class to `TransactionSummary` called `Row` which represents the output schema of the query and looks something like (nb. field names are converted to *Camel Case* for ease of use):
 
@@ -67,10 +72,12 @@ The `Row` class generated on the object is usable directly in Scalding flows or 
 ```scala
 
 @SqlQuery object WebClickTransactionAnalysis {
-  def sources = Map(
-    "web_clicks"            -> WebClick,
-    "transaction_summary"   -> TransactionSummary.Row
+  case class Sources(
+    webClicks:            DataSource[WebClick],
+    transactionSummaries: DataSource[TransactionSummary.Row]
   )
+
+  case class Parameters()
 
   def query =
     """
@@ -78,8 +85,8 @@ The `Row` class generated on the object is usable directly in Scalding flows or 
              ts.month as month,
              ts.*,
              wcs.*
-      FROM ${transaction_summary} ts
-        OUTER JOIN ${web_click_summary} wcs ON ts.customer_id = wcs.customer_id AND ts.month = wcs.month
+      FROM ${transactionSummaries} ts
+        OUTER JOIN ${webClicks} wcs ON ts.customer_id = wcs.customer_id AND ts.month = wcs.month
     """
 }
 ```
