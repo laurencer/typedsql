@@ -38,10 +38,29 @@ object HiveQuery {
    * @return error or the compiled Hive Schema
    */
   def compileQuery(hiveConf: HiveConf, sources: Map[String, StructType], parameterVariables: Map[String, String], query: String): Throwable \/ Schema = HiveSupport.useHiveClassloader {
+    val driver = new Driver(hiveConf)
+    val compiled = compileQuery(driver, hiveConf, sources, parameterVariables, query)
+    driver.destroy()
+    compiled
+  }
+
+  /**
+   * Compiles a Hive Query and returns the Hive Schema using the provided driver.
+   *
+   * This version is available to support long-running operations where the driver is externally
+   * managed.
+   *
+   * @param driver the Hive driver to use for compilation
+   * @param hiveConf conf corresponding to a local instance (see HiveSupport)
+   * @param sources the other tables/schemas that should be available
+   * @param parameterVariables map of parameter names to default values to use for compilation
+   * @param query query to compile
+   * @return error or the compiled Hive Schema
+   */
+  def compileQuery(driver: Driver, hiveConf: HiveConf, sources: Map[String, StructType], parameterVariables: Map[String, String], query: String): Throwable \/ Schema = HiveSupport.useHiveClassloader {
     SessionState.start(hiveConf)
     SessionState.get().setIsSilent(true)
     val dbName = s"test_${new Date().getTime}"
-    val driver = new Driver(hiveConf)
     try {
       // Create the compilation environment
       createCompilationEnvironment(dbName, hiveConf, sources)
@@ -54,7 +73,7 @@ object HiveQuery {
           .toMap
 
       val variables =
-          (sourceVariables ++ parameterVariables)
+        (sourceVariables ++ parameterVariables)
           .asJava
 
       SessionState.get().setHiveVariables(variables)
@@ -65,8 +84,6 @@ object HiveQuery {
       \/.right(driver.getSchema())
     } catch {
       case NonFatal(ex) => \/.left(new Exception(s"Error trying to run query '$query'", ex))
-    } finally {
-      driver.destroy()
     }
   }
 

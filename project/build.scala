@@ -81,11 +81,13 @@ object build extends Build {
         conflictManager := ConflictManager.default,
         libraryDependencies ++=
           Seq(
-            "org.apache.hadoop"  % "hadoop-client" % depend.versions.hadoop,
-            "org.apache.hive"    % "hive-exec"     % depend.versions.hive,
-            "au.com.cba.omnia"  %% "thermometer-hive" %  "1.4.2-20160414053315-99c196d",
-            "com.typesafe.akka" %% "akka-actor" % "2.4.8",
-            "com.typesafe.akka" %% "akka-remote" % "2.4.8"
+            "org.apache.hadoop"  % "hadoop-client"      % depend.versions.hadoop,
+            "org.apache.hive"    % "hive-exec"          % depend.versions.hive,
+            "au.com.cba.omnia"  %% "thermometer-hive"   % "1.4.2-20160414053315-99c196d",
+            "com.typesafe.akka" %% "akka-actor"         % "2.4.8",
+            "com.typesafe.akka" %% "akka-remote"        % "2.4.8",
+            "com.typesafe.akka" %% "akka-slf4j"         % "2.4.8",
+            "ch.qos.logback"     % "logback-classic"    % "1.0.9"
           ),
         // Exclude the datanucleus jars.
         assemblyExcludedJars in assembly := {
@@ -140,7 +142,7 @@ object build extends Build {
         libraryDependencies ++= Seq(
           "com.typesafe.akka" %% "akka-actor" % "2.4.8",
           "com.typesafe.akka" %% "akka-remote" % "2.4.8"
-        ),
+        ) ++ depend.scalaz(),
         ideaInternalPlugins := Seq(),
         ideaExternalPlugins := Seq(IdeaPlugin.Zip("scala-plugin", url("https://plugins.jetbrains.com/files/1347/27087/scala-inte llij-bin-2016.2.0.zip"))),
         assemblyExcludedJars in assembly <<= ideaFullJars,

@@ -1,6 +1,7 @@
 package com.rouesnel.typedsql.intellij.server
 
 import akka.actor._
+import akka.event.Logging
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -8,41 +9,133 @@ import scala.collection.convert.decorateAsScala._
 import com.rouesnel.typedsql._
 import com.rouesnel.typedsql.api._
 import org.apache.hadoop.hive.metastore.api.Schema
+import org.apache.hadoop.hive.ql.Driver
 
 import scala.collection.immutable.ListMap
-
 import scalaz._
 
 object CompilationServer extends App {
   implicit val system = ActorSystem("typedsql-intellij-server")
-  val listener = system.actorOf(Props[Listener], name = "listener")
+  val listener  = system.actorOf(Props[Listener], name = "listener")
+  val logger    = system.actorOf(Props[Logger], name = "logger")
 }
 
-class Listener extends Actor {
+class Logger extends Actor {
+  val log = Logging(context.system, this)
+  def receive = {
+    case msg: LogMessage => {
+      log.info(msg.message)
+    }
+  }
+}
+
+/** Actor responsible for compiling Hive queries directly */
+class Compiler extends Actor {
   import scala.concurrent.ExecutionContext.Implicits.global
+
+  val log = Logging(context.system, this)
+
   val conf = Await.result(HiveSupport.initialize(true, println(_)), 15.seconds)
 
-  val cache = scala.collection.mutable.WeakHashMap[CompilationRequest, CompilationResponse]()
+  val driver = new Driver(conf)
 
   def receive = {
     case cr: CompilationRequest => {
-      val result = \/.fromTryCatchNonFatal(cache.getOrElseUpdate(cr, {
+      val result = \/.fromTryCatchNonFatal({
         val rawSqlText = cr.query.trim.replaceAll("\\n", " ")
         /** IntelliJ includes the surrounding quotes. This removes them. */
         val sqlText = rawSqlText.dropWhile(_ == '"').reverse.dropWhile(_ == '"').reverse
-        HiveQuery.compileQuery(conf, Map.empty, Map.empty, sqlText).flatMap(Converter.produceCaseClass(_, "Row")).fold(
-          error  => throw error,
-          generatedCaseClass => CompilationResponse(generatedCaseClass)
+
+        val parametersWithDefaults = cr.parameters.mapValues({
+          case "Int"    => "0"
+          case "Double" => "0.0"
+          case "String" => "\"\""
+          case other    => {
+            log.error(s"Could not find type: ${other}. Assuming empty string.")
+            "\"\""
+          }
+        })
+
+        val mappedSources = cr.sources.mapValues(scalaStructs => {
+          StructType(ListMap(scalaStructs.map({ case (fieldName, typeName) =>
+            val hiveType = typeName match {
+              case "int"    => PrimitiveType[Int]
+              case "double" => PrimitiveType[Double]
+              case "String" => PrimitiveType[String]
+              case other    => {
+                log.error(s"Could not find type: ${other}. Assuming empty string.")
+                throw new Exception(s"Failed - bad type visited: ${other}")
+              }
+            }
+            (fieldName, hiveType)
+          }): _*))
+        })
+
+        log.info(s"Parameters: ${parametersWithDefaults}")
+        log.info(s"Sources: ${mappedSources}")
+        log.info(s"Query: ${sqlText}")
+
+        if (mappedSources.isEmpty) {
+          throw new Exception("No sources ... not compiling.")
+        }
+
+        HiveQuery.compileQuery(driver, conf, mappedSources, parametersWithDefaults, sqlText).flatMap(Converter.produceCaseClass(_, "Row")).fold(
+          exception  => {
+            log.error(exception, "Hive Query failed...")
+            throw exception
+          },
+          generatedCaseClass => {
+            log.info(s"Generated: ${generatedCaseClass}")
+            CompilationResponse(Some(generatedCaseClass))
+          }
         )
-      }))
+      })
 
       result.fold(
-        error    => println(s"Error: $error"),
-        response => sender ! response
+        error    => {
+          log.error(error, "Hive Query failed...")
+          sender ! (cr, CompilationResponse(None))
+        },
+        response => {
+          log.info(s"Generated Case Class: ${response}")
+          sender ! (cr, response)
+        }
       )
     }
-    case other: String => {
-      println(other)
+  }
+}
+
+/** Listens for requests and dispatches them to the compilers (handles caching, etc) */
+class Listener extends Actor {
+  val log = Logging(context.system, this)
+
+  val inflight = scala.collection.mutable.HashMap[CompilationRequest, List[ActorRef]]()
+  val cache = scala.collection.mutable.WeakHashMap[CompilationRequest, CompilationResponse]()
+
+  val compiler = context.actorOf(Props[Compiler]())
+
+  def receive = {
+    // 1. Get a request from IntelliJ
+    case cr: CompilationRequest => {
+      cache.get(cr) match {
+        case Some(response) => sender ! response
+        case None => {
+          // Add the current sender to the dispatch list.
+          val currentWaitList = inflight.getOrElseUpdate(cr, Nil)
+          inflight.update(cr, sender +: currentWaitList)
+
+          // Send the request to the compiler.
+          compiler ! cr
+        }
+      }
+    }
+    // 2. Get a response from the compiler (send back to waiting listeners)
+    case (cr: CompilationRequest, resp: CompilationResponse) => {
+      val waitingRequestors = inflight.remove(cr).getOrElse(Nil)
+      cache.put(cr, resp)
+      waitingRequestors.foreach(requestor => {
+        requestor ! resp
+      })
     }
   }
 }
@@ -61,6 +154,8 @@ object Converter {
   }
 
   def produceCaseClass(schema: Schema, className: String = "Row"): Throwable \/ String = \/.fromTryCatchNonFatal {
+    assert(schema != null, "Schema cannot be null...")
+    assert(schema.getFieldSchemas != null, "Field schemas cannot be null...")
     // Get all of the fields in the row schema.
     val outputRecordFields = schema.getFieldSchemas.asScala.map(fieldSchema => {
       val fieldName = fieldSchema.getName
