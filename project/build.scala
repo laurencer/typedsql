@@ -12,7 +12,6 @@ import com.dancingrobot84.sbtidea.SbtIdeaPlugin
 import sbtassembly.AssemblyPlugin.autoImport._
 
 object build extends Build {
-  val maestroVersion = "2.20.0-20160520031836-e06bc75"
 
   lazy val standardSettings =
     Defaults.coreDefaultSettings ++
@@ -72,6 +71,8 @@ object build extends Build {
       )
   )
 
+  lazy val coppersmithVersion = "0.21.3-20160724231815-2c523f2"
+
   lazy val examples = Project(
     id = "examples"
     , base = file("examples")
@@ -81,6 +82,7 @@ object build extends Build {
         ++ uniformThriftSettings
         ++ macroBuildSettings
         ++ Seq(
+          conflictManager := ConflictManager.default,
           libraryDependencies ++=
             depend.hadoopClasspath ++
               depend.omnia("ebenezer", "0.22.2-20160619063420-4eb964f") ++
@@ -90,8 +92,11 @@ object build extends Build {
               depend.hadoop() ++
               depend.hive() ++
               Seq(
-                "au.com.cba.omnia" %% "thermometer-hive" %  "1.4.2-20160414053315-99c196d",
-                "ch.qos.logback"    % "logback-classic"  % "1.0.13"
+                "au.com.cba.omnia" %% "thermometer-hive"     % "1.4.2-20160414053315-99c196d",
+                "ch.qos.logback"    % "logback-classic"      % "1.0.13",
+                "au.com.cba.omnia" %% "coppersmith-core"     % coppersmithVersion,
+                "au.com.cba.omnia" %% "coppersmith-scalding" % coppersmithVersion,
+                "au.com.cba.omnia" %% "coppersmith-tools"    % coppersmithVersion
               )
       )
   ) dependsOn(core, test % "test->compile")

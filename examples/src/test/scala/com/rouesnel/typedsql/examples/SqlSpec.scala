@@ -26,7 +26,6 @@ class SqlSpec extends TypedSqlSpec { def is = s2"""
 
     println()
     println(result)
-    println(resultChained)
     println()
 
     result must not(beEmpty)
