@@ -17,7 +17,7 @@ struct Order {
   2: required i32    customer_id
   3: required i32    order_time
   4: optional i32    delivered_at
-  5: optional i32   cancelled
+  5: optional i32    cancelled
   6: optional i32    refunded_at
 }
 
