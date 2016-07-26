@@ -325,14 +325,14 @@ object SqlQuery {
             q"Map(..${literals})"
           }
 
-          val amendedParents = parents :+ tq"CompiledSqlQuery"
+          val amendedParents = parents :+ tq"com.rouesnel.typedsql.CompiledSqlQuery"
           q"""$mods object $tpname extends ..$amendedParents {
             ..$stats
 
             ..${generatedStructs}
 
             def apply(srcs: Sources, params: Parameters): com.rouesnel.typedsql.DataSource[Row] = {
-             HiveQueryDataSource[Row](query, ${readParametersAsMap("params", parameters.keys)}, ${readSourcesAsMap("srcs", sources.keys)})
+             com.rouesnel.typedsql.HiveQueryDataSource[Row](query, ${readParametersAsMap("params", parameters.keys)}, ${readSourcesAsMap("srcs", sources.keys)})
             }
           }"""
 

@@ -44,10 +44,10 @@ object build extends Build {
         publishArtifact := false,
         onLoad in Global := ((s: State) => { "updateIdea" :: s}) compose (onLoad in Global).value
       )
-    , aggregate = Seq(core, intellij, intellijServer, intellijApi)
+    , aggregate = Seq(core, test, examples, intellij, intellijServer, intellijApi)
   )
 
-  lazy val core = Project(
+  lazy val core: Project = Project(
     id = "core"
     , base = file("core")
     , settings =
@@ -71,6 +71,53 @@ object build extends Build {
           )
       )
   )
+
+  lazy val examples = Project(
+    id = "examples"
+    , base = file("examples")
+    , settings =
+      standardSettings
+        ++ uniform.project("typedsql-examples", "com.rouesnel.typedsql.examples")
+        ++ uniformThriftSettings
+        ++ macroBuildSettings
+        ++ Seq(
+          libraryDependencies ++=
+            depend.hadoopClasspath ++
+              depend.omnia("ebenezer", "0.22.2-20160619063420-4eb964f") ++
+              depend.parquet() ++
+              depend.testing() ++
+              depend.logging() ++
+              depend.hadoop() ++
+              depend.hive() ++
+              Seq(
+                "au.com.cba.omnia" %% "thermometer-hive" %  "1.4.2-20160414053315-99c196d",
+                "ch.qos.logback"    % "logback-classic"  % "1.0.13"
+              )
+      )
+  ) dependsOn(core, test % "test->compile")
+
+  lazy val test = Project(
+    id = "test"
+    , base = file("test")
+    , settings = standardSettings
+      ++ uniform.project("typedsql-test", "com.rouesnel.typedsql.test")
+      ++ uniformThriftSettings
+      ++ macroBuildSettings
+      ++ Seq(
+      libraryDependencies ++=
+        depend.hadoopClasspath ++
+        depend.omnia("ebenezer", "0.22.2-20160619063420-4eb964f") ++
+        depend.parquet() ++
+        depend.testing() ++
+        depend.logging() ++
+        depend.hadoop() ++
+        depend.hive() ++
+        depend.testing(configuration = "compile") ++
+        Seq(
+        "au.com.cba.omnia" %% "thermometer-hive" %  "1.4.2-20160414053315-99c196d"
+      )
+    )
+  ) dependsOn(core)
 
   lazy val intellijServer = Project(
     id = "intellij-server",

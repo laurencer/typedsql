@@ -7,7 +7,7 @@ import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.collection.convert.decorateAsScala._
 import com.rouesnel.typedsql._
-import com.rouesnel.typedsql.api._
+import com.rouesnel.typedsql.api.{CompilationRequest, CompilationResponse, LogMessage}
 import org.apache.hadoop.hive.metastore.api.Schema
 import org.apache.hadoop.hive.ql.Driver
 
@@ -56,37 +56,20 @@ class Compiler extends Actor {
           }
         })
 
-        val mappedSources = cr.sources.mapValues(scalaStructs => {
-          StructType(ListMap(scalaStructs.map({ case (fieldName, typeName) =>
-            val hiveType = typeName match {
-              case "int"    => PrimitiveType[Int]
-              case "double" => PrimitiveType[Double]
-              case "String" => PrimitiveType[String]
-              case other    => {
-                log.error(s"Could not find type: ${other}. Assuming empty string.")
-                throw new Exception(s"Failed - bad type visited: ${other}")
-              }
-            }
-            (fieldName, hiveType)
-          }): _*))
-        })
+        val mappedSources = cr.sources.mapValues(s => Converter.apiTypeToHiveType(s).asInstanceOf[StructType])
 
         log.info(s"Parameters: ${parametersWithDefaults}")
         log.info(s"Sources: ${mappedSources}")
         log.info(s"Query: ${sqlText}")
-
-        if (mappedSources.isEmpty) {
-          throw new Exception("No sources ... not compiling.")
-        }
 
         HiveQuery.compileQuery(driver, conf, mappedSources, parametersWithDefaults, sqlText).flatMap(Converter.produceCaseClass(_, "Row")).fold(
           exception  => {
             log.error(exception, "Hive Query failed...")
             throw exception
           },
-          generatedCaseClass => {
-            log.info(s"Generated: ${generatedCaseClass}")
-            CompilationResponse(Some(generatedCaseClass))
+          (values) => {
+            log.info(s"Generated: ${values}")
+            CompilationResponse(Some(values._1), Some(values._2))
           }
         )
       })
@@ -94,7 +77,7 @@ class Compiler extends Actor {
       result.fold(
         error    => {
           log.error(error, "Hive Query failed...")
-          sender ! (cr, CompilationResponse(None))
+          sender ! (cr, CompilationResponse(None, None))
         },
         response => {
           log.info(s"Generated Case Class: ${response}")
@@ -141,6 +124,22 @@ class Listener extends Actor {
 }
 
 object Converter {
+  def apiTypeToHiveType(apiType: api.HiveType): HiveType = apiType match {
+    case api.PrimitiveType("Integer")     => PrimitiveType[Int]
+    case api.PrimitiveType("Double")  => PrimitiveType[Double]
+    case api.PrimitiveType("String")  => PrimitiveType[String]
+    case m: api.MapType               => MapType(apiTypeToHiveType(m.key), apiTypeToHiveType(m.value))
+    case l: api.ArrayType             => ArrayType(apiTypeToHiveType(l.valueType))
+    case s: api.StructType            => StructType(ListMap(s.fields.mapValues(apiTypeToHiveType).toList: _*))
+  }
+
+  def hiveTypeToApiType(hiveType: HiveType): api.HiveType = hiveType match {
+    case p: PrimitiveType[_] => api.PrimitiveType(p.scalaTypeName)
+    case m: MapType          => api.MapType(hiveTypeToApiType(m.key), hiveTypeToApiType(m.value))
+    case l: ArrayType        => api.ArrayType(hiveTypeToApiType(l.valueType))
+    case s: StructType       => api.StructType(ListMap(s.fields.mapValues(hiveTypeToApiType).toList: _*))
+  }
+
   def hiveTypeToScalaType(hiveType: HiveType): String = hiveType match {
     case p: PrimitiveType[_] => p.scalaTypeName
     case m: MapType          => s"scala.collection.Map[${hiveTypeToScalaType(m.key)}, ${hiveTypeToScalaType(m.value)}]"
@@ -153,7 +152,7 @@ object Converter {
     }
   }
 
-  def produceCaseClass(schema: Schema, className: String = "Row"): Throwable \/ String = \/.fromTryCatchNonFatal {
+  def produceCaseClass(schema: Schema, className: String = "Row"): Throwable \/ (String, api.StructType) = \/.fromTryCatchNonFatal {
     assert(schema != null, "Schema cannot be null...")
     assert(schema.getFieldSchemas != null, "Field schemas cannot be null...")
     // Get all of the fields in the row schema.
@@ -190,6 +189,8 @@ object Converter {
       s"${fieldName}: ${hiveTypeToScalaType(fieldType)}"
     }}).mkString(", ")
 
-    s"case class ${className}(${caseClassFields})"
+    val apiHiveType = hiveTypeToApiType(fieldsToGenerate).asInstanceOf[api.StructType]
+
+    s"case class ${className}(${caseClassFields})" -> apiHiveType
   }
 }
