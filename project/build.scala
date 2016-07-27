@@ -196,7 +196,7 @@ object build extends Build {
           "com.typesafe.akka" %% "akka-remote" % "2.4.8"
         ) ++ depend.scalaz(),
         ideaInternalPlugins := Seq(),
-        ideaExternalPlugins := Seq(IdeaPlugin.Zip("scala-plugin", url("https://plugins.jetbrains.com/files/1347/27087/scala-inte llij-bin-2016.2.0.zip"))),
+        ideaExternalPlugins := Seq(IdeaPlugin.Zip("scala-plugin", url("https://plugins.jetbrains.com/files/1347/27087/scala-intellij-bin-2016.2.0.zip"))),
         assemblyExcludedJars in assembly <<= ideaFullJars,
         assemblyMergeStrategy in assembly := {
           case x if Assembly.isConfigFile(x) =>
