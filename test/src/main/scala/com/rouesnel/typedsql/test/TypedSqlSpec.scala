@@ -13,12 +13,14 @@ import com.twitter.scalding.typed.IterablePipe
 import com.twitter.scrooge.ThriftStruct
 
 abstract class TypedSqlSpec extends ThermometerHiveSpec with ParquetLogging {
+  def randomPositive = math.abs(Random.nextLong())
+
   /** Configuration used to the test */
   def testConfig = Config(
     hiveConf,
-    _ => "typedsql_tmp" + "." + new Date().getTime + "_" + math.abs(Random.nextLong()),
-    _ => "typedsql_tmp" + "." + new Date().getTime + "_" + math.abs(Random.nextLong()),
-    _ => s"${testDir.resolve("tmp")}/typedsql_tmp/${new Date().getTime}_${math.abs(Random.nextLong())}"
+    _ => s"typedsql_tmp_${randomPositive}" + "." + new Date().getTime + "_" + randomPositive,
+    _ => s"typedsql_tmp_${randomPositive}" + "." + new Date().getTime + "_" + randomPositive,
+    _ => s"${testDir.resolve("tmp")}/typedsql_tmp/${new Date().getTime}_${randomPositive}"
   )
 
   def executeDataSource[T <: ThriftStruct : Manifest](source: DataSource[T]): List[T] = {

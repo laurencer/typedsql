@@ -106,6 +106,7 @@ object build extends Build {
         ++ macroBuildSettings
         ++ Seq(
           conflictManager := ConflictManager.default,
+          parallelExecution in Test := false,
           libraryDependencies ++=
             depend.hadoopClasspath ++
               depend.omnia("ebenezer", "0.22.2-20160619063420-4eb964f") ++

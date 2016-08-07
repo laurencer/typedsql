@@ -2,7 +2,7 @@
 
 struct OrderLineItem {
   1: required string order_id
-  2: required i32    order_item_id
+  2: required i16    order_item_id
   3: required i32    product_id
   4: required string product_name
   5: required i32    item_quantity
@@ -34,5 +34,5 @@ struct Customer {
   4: required i32    date_joined
   5: required string email_address
   6: optional string gender
-  7: required i32    age
+  7: required i16    age
 }

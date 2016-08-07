@@ -33,6 +33,7 @@ object HiveQuery {
 
   /**
    * Compiles a Hive Query and returns the Hive Schema
+   *
    * @param hiveConf conf corresponding to a local instance (see HiveSupport)
    * @param sources the other tables/schemas that should be available
    * @param parameterVariables map of parameter names to default values to use for compilation
@@ -41,9 +42,12 @@ object HiveQuery {
    */
   def compileQuery(hiveConf: HiveConf, sources: Map[String, StructType], parameterVariables: Map[String, String], query: String): Throwable \/ Schema = HiveSupport.useHiveClassloader {
     val driver = new Driver(hiveConf)
-    val compiled = compileQuery(driver, hiveConf, sources, parameterVariables, query)
-    driver.destroy()
-    compiled
+    try {
+      compileQuery(driver, hiveConf, sources, parameterVariables, query)
+    } finally {
+      driver.close()
+      driver.destroy()
+    }
   }
 
   /**

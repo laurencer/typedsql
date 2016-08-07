@@ -45,7 +45,6 @@ case class MaterialisedHiveTable(hdfsPath: String, hiveTable: String)
 
 case class HiveView(hiveTable: String)
 
-
 /**
  * Generic Scalding Typed Pipe source. Will be persisted to disk on first use as a Hive table.
  */
@@ -87,13 +86,19 @@ case class HiveQueryDataSource[T <: ThriftStruct : Manifest](query: String,
       SessionState.get().setIsSilent(true)
       val driver = new Driver(config.conf)
 
-      val viewName = config.viewName(this)
-      val hdfsPath = config.hdfsPath(this)
+      val viewName      = config.viewName(this)
+      val databaseName  = viewName.split("\\.").headOption
+      val hdfsPath      = config.hdfsPath(this)
 
       SessionState.get().setHiveVariables((parameters ++ evaluatedSources).asJava)
 
       try {
         driver.init()
+
+        val createDatabaseQuery = databaseName.map(db => s"CREATE DATABASE IF NOT EXISTS ${db}")
+        createDatabaseQuery.map(driver.run(_)).filter(_.getResponseCode != 0).foreach(resp => {
+          throw new Exception(s"Error creating database ${databaseName}. ${resp.getErrorMessage}")
+        })
 
         val createQuery =
           s"""
@@ -127,13 +132,19 @@ case class HiveQueryDataSource[T <: ThriftStruct : Manifest](query: String,
       SessionState.get().setIsSilent(true)
       val driver = new Driver(config.conf)
 
-      val tableName = config.tableName(this)
-      val hdfsPath = config.hdfsPath(this)
+      val tableName    = config.tableName(this)
+      val databaseName = tableName.split("\\.").headOption
+      val hdfsPath     = config.hdfsPath(this)
 
       SessionState.get().setHiveVariables((parameters ++ evaluatedSources).asJava)
 
       try {
         driver.init()
+
+        val createDatabaseQuery = databaseName.map(db => s"CREATE DATABASE IF NOT EXISTS ${db}")
+        createDatabaseQuery.map(driver.run(_)).filter(_.getResponseCode != 0).foreach(resp => {
+          throw new Exception(s"Error creating database ${databaseName}. ${resp.getErrorMessage}")
+        })
 
         val createQuery =
           s"""
@@ -142,7 +153,6 @@ case class HiveQueryDataSource[T <: ThriftStruct : Manifest](query: String,
              |        LOCATION '${hdfsPath}'
              |        AS ${query}
           """.stripMargin
-
         val response = driver.run(createQuery)
         if (response.getResponseCode() != 0)
           throw new Exception(s"Error running query '$query'. ${response.getErrorMessage}")

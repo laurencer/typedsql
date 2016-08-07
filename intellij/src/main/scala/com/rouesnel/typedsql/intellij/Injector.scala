@@ -220,20 +220,6 @@ class Injector extends SyntheticMembersInjector {
 
                             \/.right(thriftFields)
                           }
-                          /*case clazz: ScClass => {
-                            remoteLog(12314432, "Got CLAZZZ - USING CLAZZ VIEW INSTEAD :)")
-                            clazz.constructor.map(ctor => {
-                              val parameters = ctor.parameters.toList
-                              val fields = parameters.map(param => {
-                                val typeName = param.typeElement.map({
-                                  case ste: ScSimpleTypeElement => ste.getText
-                                })
-                                param.name -> typeName.getOrElse("???")
-                              })
-                              remoteLog(12314432, s"Got FIELDS: ${fields}")
-                              fields
-                            }).toRightDisjunction("Failed to find constructor for returned Row class")
-                          }*/
                           case other => \/.left(s"Expected a Trait for schema but instead found: ${other}")
                         })
                       fieldsInsideSchema
