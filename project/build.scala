@@ -43,7 +43,7 @@ object build extends Build {
         publishArtifact := false,
         onLoad in Global := ((s: State) => { "updateIdea" :: s}) compose (onLoad in Global).value
       )
-    , aggregate = Seq(core, test, examples, intellij, intellijServer, intellijApi)
+    , aggregate = Seq(macros, test, examples, intellij, intellijServer, intellijApi)
   )
 
   lazy val core: Project = Project(
@@ -55,7 +55,30 @@ object build extends Build {
         ++ uniformThriftSettings
         ++ macroBuildSettings
         ++ Seq(
-        //conflictManager := ConflictManager.default,
+        libraryDependencies ++=
+          depend.hadoopClasspath ++
+            depend.omnia("ebenezer", "0.22.2-20160619063420-4eb964f") ++
+            depend.parquet() ++
+            depend.testing() ++
+            depend.logging() ++
+            depend.hadoop() ++
+            depend.hive() ++
+            Seq(
+              "au.com.cba.omnia" %% "thermometer-hive" %  "1.4.2-20160414053315-99c196d",
+              "ch.qos.logback"    % "logback-classic"  % "1.0.13"
+            )
+      )
+  )
+
+  lazy val macros: Project = Project(
+    id = "macro"
+    , base = file("macro")
+    , settings =
+      standardSettings
+        ++ uniform.project("typedsql-macro", "com.rouesnel.typedsql")
+        ++ uniformThriftSettings
+        ++ macroBuildSettings
+        ++ Seq(
         libraryDependencies ++=
           depend.hadoopClasspath ++
           depend.omnia("ebenezer", "0.22.2-20160619063420-4eb964f") ++
@@ -69,7 +92,7 @@ object build extends Build {
             "ch.qos.logback"    % "logback-classic"  % "1.0.13"
           )
       )
-  )
+  ) dependsOn(core)
 
   lazy val coppersmithVersion = "0.21.3-20160724231815-2c523f2"
 
@@ -99,7 +122,7 @@ object build extends Build {
                 "au.com.cba.omnia" %% "coppersmith-tools"    % coppersmithVersion
               )
       )
-  ) dependsOn(core, test % "test->compile")
+  ) dependsOn(macros, test % "test->compile")
 
   lazy val test = Project(
     id = "test"
@@ -122,7 +145,7 @@ object build extends Build {
         "au.com.cba.omnia" %% "thermometer-hive" %  "1.4.2-20160414053315-99c196d"
       )
     )
-  ) dependsOn(core)
+  ) dependsOn(macros)
 
   lazy val intellijServer = Project(
     id = "intellij-server",
@@ -177,7 +200,7 @@ object build extends Build {
           assembledJar
         }
       )
-  ).dependsOn(core, intellijApi)
+  ).dependsOn(macros, intellijApi)
 
   lazy val intellijApi = Project(
     id = "intellij-api",
