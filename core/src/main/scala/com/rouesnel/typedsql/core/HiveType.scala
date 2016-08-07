@@ -1,4 +1,4 @@
-package com.rouesnel.typedsql
+package com.rouesnel.typedsql.core
 
 import scala.collection.immutable.ListMap
 import scala.reflect._, macros.whitebox
@@ -13,10 +13,10 @@ object HiveType {
     val ArrayExtractor  = "array<(.*)>".r
 
     typeName match {
-      case "int"    => \/.right(PrimitiveType[Int])
-      case "string" => \/.right(PrimitiveType[String])
-      case "double" => \/.right(PrimitiveType[Double])
-      case "bigint" => \/.right(PrimitiveType[Long])
+      case "int"    => \/.right(IntType)
+      case "string" => \/.right(StringType)
+      case "double" => \/.right(DoubleType)
+      case "bigint" => \/.right(LongType)
       // Map Types
       case  MapExtractor(keyType, valueType) =>
         for {
@@ -60,65 +60,36 @@ sealed abstract class HiveType {
   def hiveType: String
 }
 
-/** Primitive scalar types */
-case class PrimitiveType[T](implicit manifest: ClassTag[T]) extends HiveType {
+sealed abstract class PrimitiveType extends HiveType {
   def allTypes: Set[HiveType] = Set(this)
-  /** Name of the Thrift TTYPE */
-  def thriftTypeName = {
-    val StringTag = implicitly[ClassTag[String]]
-    manifest match {
-      case ClassTag.Int     => "I32"
-      case ClassTag.Long    => "I64"
-      case ClassTag.Double  => "DOUBLE"
-      case StringTag        => "STRING"
-    }
-  }
+  def scalaTypeName: String
+  def thriftTypeName: String
+}
 
-  /** Scala compiler type representation */
-  def scalaType(c: whitebox.Context) = {
-    import c.universe._
-    val StringTag = implicitly[ClassTag[String]]
-    manifest match {
-      case ClassTag.Int     => tq"Int"
-      case ClassTag.Long    => tq"Long"
-      case ClassTag.Double  => tq"Double"
-      case StringTag        => tq"String"
-    }
-  }
-
-  /** Scala textual name for the type */
-  def scalaTypeName = {
-    val StringTag = implicitly[ClassTag[String]]
-    manifest match {
-      case ClassTag.Int     => "Integer"
-      case ClassTag.Long    => "Long"
-      case ClassTag.Double  => "Double"
-      case StringTag        => "String"
-    }
-  }
-
-  /** Hive's textual representation of the field */
-  def hiveType = {
-    val StringTag = implicitly[ClassTag[String]]
-    manifest match {
-      case ClassTag.Int     => "int"
-      case ClassTag.Long    => "bigint"
-      case ClassTag.Double  => "double"
-      case StringTag        => "string"
-    }
-  }
-
-  /** Used where default values are needed */
-  def placeholderValue(c: whitebox.Context) = {
-    import c.universe._
-    val StringTag = implicitly[ClassTag[String]]
-    manifest match {
-      case ClassTag.Int     => q"0"
-      case ClassTag.Long    => q"0L"
-      case ClassTag.Double  => q"0.0"
-      case StringTag        => q"null"
-    }
-  }
+case object ShortType extends PrimitiveType {
+  def hiveType = "int"
+  def scalaTypeName = "Short"
+  def thriftTypeName = "I16"
+}
+case object IntType extends PrimitiveType {
+  def hiveType = "int"
+  def scalaTypeName = "Integer"
+  def thriftTypeName = "I32"
+}
+case object LongType extends PrimitiveType {
+  def hiveType = "bigint"
+  def scalaTypeName = "Long"
+  def thriftTypeName = "I64"
+}
+case object DoubleType extends PrimitiveType {
+  def hiveType = "double"
+  def scalaTypeName = "Double"
+  def thriftTypeName = "DOUBLE"
+}
+case object StringType extends PrimitiveType {
+  def hiveType = "string"
+  def scalaTypeName = "String"
+  def thriftTypeName = "STRING"
 }
 
 case class MapType(key: HiveType, value: HiveType) extends HiveType {

@@ -200,14 +200,14 @@ object build extends Build {
           assembledJar
         }
       )
-  ).dependsOn(macros, intellijApi)
+  ).dependsOn(core, macros, intellijApi)
 
   lazy val intellijApi = Project(
     id = "intellij-api",
     base = file("intellij-api"),
     settings = standardSettings ++
       uniform.project("typedsql-api", "com.rouesnel.typedsql.api")
-  )
+  ) dependsOn(core)
 
   lazy val intellij = Project(
     id = "intellij"
@@ -262,7 +262,8 @@ object build extends Build {
           out
         }
     )
-  ).enablePlugins(SbtIdeaPlugin).dependsOn(intellijApi)
+  ).enablePlugins(SbtIdeaPlugin).dependsOn(core, intellijApi)
+
   lazy val packagePlugin = TaskKey[File]("package-plugin", "Create plugin's zip file ready to load into IDEA")
 
   lazy val ideaRunner: Project = project.in(file("ideaRunner"))

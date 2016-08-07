@@ -2,6 +2,8 @@ package com.rouesnel.typedsql
 
 import scala.reflect.macros.whitebox
 
+import com.rouesnel.typedsql.core._
+
 class ScroogeGenerator[Context <: whitebox.Context](val c: Context) {
   import c.universe._
 
@@ -77,7 +79,13 @@ class ScroogeGenerator[Context <: whitebox.Context](val c: Context) {
    * types that have been generated (or will be generated shortly).
    */
   def resolveType(structNamer: StructType => TypeName, fieldType: HiveType): Tree = fieldType match {
-    case p: PrimitiveType[_]          => p.scalaType(c)
+    case p: PrimitiveType             => p match {
+      case ShortType => tq"Short"
+      case IntType => tq"Int"
+      case LongType => tq"Long"
+      case DoubleType => tq"Double"
+      case StringType => tq"String"
+    }
     case ArrayType(valueType)         => tq"List[${resolveType(structNamer, valueType)}]"
     case MapType(keyType, valueType)  => tq"Map[${resolveType(structNamer, keyType)}, ${resolveType(structNamer, valueType)}]"
     case s: StructType                => tq"${structNamer(s)}"
@@ -87,7 +95,7 @@ class ScroogeGenerator[Context <: whitebox.Context](val c: Context) {
    * Maps a Hive type to the Thrift protocol types.
    */
   def hiveTypeToThriftTypeName(typ: HiveType): Tree = typ match {
-    case p: PrimitiveType[_] => q"org.apache.thrift.protocol.TType.${TermName(p.thriftTypeName)}"
+    case p: PrimitiveType    => q"org.apache.thrift.protocol.TType.${TermName(p.thriftTypeName)}"
     case m: MapType          => q"org.apache.thrift.protocol.TType.${TermName("MAP")}"
     case l: ArrayType        => q"org.apache.thrift.protocol.TType.${TermName("LIST")}"
     case s: StructType       => q"org.apache.thrift.protocol.TType.${TermName("STRUCT")}"
@@ -143,7 +151,7 @@ class ScroogeGenerator[Context <: whitebox.Context](val c: Context) {
 
   /** Generates the method for reading the particular field value. */
   def readerForType(structNamer: StructType => TypeName, hiveType: HiveType): Tree = hiveType match {
-    case p: PrimitiveType[_] => q"_iprot.${TermName("read" + p.thriftTypeName.toLowerCase.capitalize)}"
+    case p: PrimitiveType    => q"_iprot.${TermName("read" + p.thriftTypeName.toLowerCase.capitalize)}"
     case m: MapType          => buildMapDecode(resolveType(structNamer, m.key), resolveType(structNamer, m.value), readerForType(structNamer, m.key), readerForType(structNamer, m.value))
     case a: ArrayType        => buildArrayDecode(resolveType(structNamer, a.valueType), readerForType(structNamer, a.valueType))
     case s: StructType       => q"${structNamer(s).toTermName}.decode(_iprot)"
@@ -165,7 +173,13 @@ class ScroogeGenerator[Context <: whitebox.Context](val c: Context) {
     // Mutable placeholder fields used to store each field as its read.
     val placeholderFields = fields.map({ case (fieldName, hiveType) => {
       val placeholderValue = hiveType match {
-        case p: PrimitiveType[_] => p.placeholderValue(c)
+        case p: PrimitiveType => p match {
+          case ShortType  => q"0"
+          case IntType    => q"0"
+          case LongType   => q"0L"
+          case DoubleType => q"0.0"
+          case StringType => q""" "" """
+        }
         case _ => q"null"
       }
       q"var ${TermName(fieldName)}: ${resolveType(structNamer, hiveType)} = ${placeholderValue}"

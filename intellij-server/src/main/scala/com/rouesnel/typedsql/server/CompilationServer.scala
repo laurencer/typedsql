@@ -6,13 +6,16 @@ import akka.event.Logging
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.collection.convert.decorateAsScala._
-import com.rouesnel.typedsql._
-import com.rouesnel.typedsql.api.{CompilationRequest, CompilationResponse, LogMessage}
+import scala.collection.immutable.ListMap
+
 import org.apache.hadoop.hive.metastore.api.Schema
 import org.apache.hadoop.hive.ql.Driver
 
-import scala.collection.immutable.ListMap
 import scalaz._
+
+import com.rouesnel.typedsql._
+import com.rouesnel.typedsql.core._
+import com.rouesnel.typedsql.api.{CompilationRequest, CompilationResponse, LogMessage}
 
 object CompilationServer extends App {
   implicit val system = ActorSystem("typedsql-intellij-server")
@@ -56,7 +59,7 @@ class Compiler extends Actor {
           }
         })
 
-        val mappedSources = cr.sources.mapValues(s => Converter.apiTypeToHiveType(s).asInstanceOf[StructType])
+        val mappedSources = cr.sources
 
         log.info(s"Parameters: ${parametersWithDefaults}")
         log.info(s"Sources: ${mappedSources}")
@@ -124,24 +127,8 @@ class Listener extends Actor {
 }
 
 object Converter {
-  def apiTypeToHiveType(apiType: api.HiveType): HiveType = apiType match {
-    case api.PrimitiveType("Integer")     => PrimitiveType[Int]
-    case api.PrimitiveType("Double")  => PrimitiveType[Double]
-    case api.PrimitiveType("String")  => PrimitiveType[String]
-    case m: api.MapType               => MapType(apiTypeToHiveType(m.key), apiTypeToHiveType(m.value))
-    case l: api.ArrayType             => ArrayType(apiTypeToHiveType(l.valueType))
-    case s: api.StructType            => StructType(ListMap(s.fields.mapValues(apiTypeToHiveType).toList: _*))
-  }
-
-  def hiveTypeToApiType(hiveType: HiveType): api.HiveType = hiveType match {
-    case p: PrimitiveType[_] => api.PrimitiveType(p.scalaTypeName)
-    case m: MapType          => api.MapType(hiveTypeToApiType(m.key), hiveTypeToApiType(m.value))
-    case l: ArrayType        => api.ArrayType(hiveTypeToApiType(l.valueType))
-    case s: StructType       => api.StructType(ListMap(s.fields.mapValues(hiveTypeToApiType).toList: _*))
-  }
-
   def hiveTypeToScalaType(hiveType: HiveType): String = hiveType match {
-    case p: PrimitiveType[_] => p.scalaTypeName
+    case p: PrimitiveType    => p.scalaTypeName
     case m: MapType          => s"scala.collection.Map[${hiveTypeToScalaType(m.key)}, ${hiveTypeToScalaType(m.value)}]"
     case l: ArrayType        => s"scala.collection.List[${hiveTypeToScalaType(l.valueType)}]"
     case s: StructType       => {
@@ -152,7 +139,7 @@ object Converter {
     }
   }
 
-  def produceCaseClass(schema: Schema, className: String = "Row"): Throwable \/ (String, api.StructType) = \/.fromTryCatchNonFatal {
+  def produceCaseClass(schema: Schema, className: String = "Row"): Throwable \/ (String, StructType) = \/.fromTryCatchNonFatal {
     assert(schema != null, "Schema cannot be null...")
     assert(schema.getFieldSchemas != null, "Field schemas cannot be null...")
     // Get all of the fields in the row schema.
@@ -189,8 +176,6 @@ object Converter {
       s"${fieldName}: ${hiveTypeToScalaType(fieldType)}"
     }}).mkString(", ")
 
-    val apiHiveType = hiveTypeToApiType(fieldsToGenerate).asInstanceOf[api.StructType]
-
-    s"case class ${className}(${caseClassFields})" -> apiHiveType
+    s"case class ${className}(${caseClassFields})" -> fieldsToGenerate
   }
 }

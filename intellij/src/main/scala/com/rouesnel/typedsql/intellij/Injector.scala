@@ -4,24 +4,32 @@ import java.io.File
 
 import scala.concurrent.{Await, TimeoutException}
 import scala.concurrent.duration._
+
+import scala.collection.immutable.ListMap
+
 import akka.actor._
 import akka.pattern.ask
+
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.psi.PsiElement
+
 import com.typesafe.config._
+
 import org.jetbrains.plugins.scala.lang.psi.api.base.ScLiteral
 import org.jetbrains.plugins.scala.lang.psi.api.statements.{ScFunctionDefinition, ScValue}
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.templates.{ScExtendsBlock, ScTemplateBody}
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef._
 import org.jetbrains.plugins.scala.lang.psi.impl.toplevel.typedef.SyntheticMembersInjector
-import com.rouesnel.typedsql.api._
+
 import org.jetbrains.plugins.scala.lang.psi.ScalaPsiUtil
 import org.jetbrains.plugins.scala.lang.psi.api.base.types.{ScParameterizedTypeElement, ScSimpleTypeElement}
 import org.jetbrains.plugins.scala.lang.psi.types.result.TypingContext
 
 import scalaz._
 import Scalaz._
-import scala.collection.immutable.ListMap
+
+import com.rouesnel.typedsql.api._
+import com.rouesnel.typedsql.core._
 
 object CliHelper {
   import scala.sys.process._
@@ -258,9 +266,9 @@ class Injector extends SyntheticMembersInjector {
                   name -> StructType(ListMap(values.map({
                     case (fieldName, fieldType) => {
                       fieldName -> (fieldType match {
-                        case "int" => PrimitiveType("Integer")
-                        case "double" => PrimitiveType("Double")
-                        case "String" => PrimitiveType("String")
+                        case "int"    => IntType
+                        case "double" => DoubleType
+                        case "String" => StringType
                       })
                     }}): _*))
                 }})

@@ -6,6 +6,8 @@ import scala.collection.immutable.ListMap
 import scala.reflect.api.Trees
 import scala.reflect.macros.whitebox
 
+import com.rouesnel.typedsql.core._
+
 class SourceMapping(c: whitebox.Context) {
   import c.universe._
 
@@ -20,9 +22,9 @@ class SourceMapping(c: whitebox.Context) {
 
   /** Converts a Scala type to a Hive type */
   private def convertScalaToHiveType(tpe: Type): HiveType = tpe match {
-    case typ if (typ <:< doubleType) => PrimitiveType[Double]
-    case typ if (typ <:< intType)    => PrimitiveType[Int]
-    case typ if (typ <:< stringType) => PrimitiveType[String]
+    case typ if (typ <:< doubleType) => DoubleType
+    case typ if (typ <:< intType)    => IntType
+    case typ if (typ <:< stringType) => StringType
     case map if (map <:< mapType) => {
       val key :: value :: Nil = map.typeArgs
       MapType(convertScalaToHiveType(key), convertScalaToHiveType(key))

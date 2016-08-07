@@ -1,5 +1,7 @@
 package com.rouesnel.typedsql.api
 
+import com.rouesnel.typedsql.core._
+
 case class CompilationRequest(
   query: String,
   parameters: Map[FieldName, ScalaTypeName],

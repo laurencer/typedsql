@@ -13,6 +13,8 @@ import org.apache.hadoop.hive.ql.session.SessionState
 
 import scalaz._, Scalaz._
 
+import com.rouesnel.typedsql.core._
+
 /** Provides helpers for parsing/manipulating Hive queries */
 object HiveQuery {
   import scala.collection.convert.decorateAsJava._

@@ -10,6 +10,8 @@ import scala.reflect.macros._
 
 import scalaz._, Scalaz._
 
+import com.rouesnel.typedsql.core._
+
 @compileTimeOnly("enable macro paradise to expand macro annotations")
 class SqlQuery extends StaticAnnotation {
   def macroTransform(annottees: Any*) = macro SqlQuery.impl
