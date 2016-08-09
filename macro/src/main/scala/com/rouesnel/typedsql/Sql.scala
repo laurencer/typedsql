@@ -60,6 +60,7 @@ object SqlQuery {
           }
 
           // Retrieve the schema from the compiled query.
+          /*
           val schema = HiveQuery.compileQuery(hiveConf, sources, parameters, sqlStatement)
             .fold(ex => c.abort(c.enclosingPosition, ex.toString), identity)
 
@@ -71,6 +72,18 @@ object SqlQuery {
                   .fold(missingType => c.abort(c.enclosingPosition, s"Could not find Scala type to match Hive type ${missingType} (in ${fieldSchema.getType}) for column ${fieldName}"), identity)
             (fieldName, fieldType)
           }).toList
+
+          */
+
+          val outputRecordFields = HiveCache.cached(hiveConf, sources, parameters, sqlStatement)(schema => {
+            schema.getFieldSchemas.asScala.map(fieldSchema => {
+              val fieldName = fieldSchema.getName
+              val fieldType =
+                HiveType.parseHiveType(fieldSchema.getType)
+                  .fold(missingType => c.abort(c.enclosingPosition, s"Could not find Scala type to match Hive type ${missingType} (in ${fieldSchema.getType}) for column ${fieldName}"), identity)
+              (fieldName, fieldType)
+            }).toList
+          })
 
           // Map all nested fields on the top-level schema to a struct
           // E.g. SELECT * FROM test1 INNER JOIN test2

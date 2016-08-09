@@ -77,13 +77,6 @@ object HiveSupport {
         log("Hive client closed.")
       }
 
-      log("Creating placeholder tables.")
-      import au.com.cba.omnia.beeswax.Hive
-      val successfullyCreated = Hive.createParquetTable[Person]("test_db", "test", Nil)
-        .run(hiveConf)
-      log("Placeholder tables created successfully.")
-      log(s"Created test table: $successfullyCreated")
-
       hiveConf
     }
     if (changeClassloader) {

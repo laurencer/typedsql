@@ -16,14 +16,28 @@ class SourceMapping(c: whitebox.Context) {
   private val seqType     = c.weakTypeOf[Seq[_]]
   private val mapType     = c.weakTypeOf[scala.collection.Map[_, _]]
   private val intType     = c.weakTypeOf[Int]
+  private val longType     = c.weakTypeOf[Long]
+  private val booleanType     = c.weakTypeOf[Boolean]
   private val doubleType  = c.weakTypeOf[Double]
   private val stringType  = c.weakTypeOf[String]
+  private val dateType    = c.weakTypeOf[java.util.Date]
+  private val shortType   = c.weakTypeOf[Short]
+  private val byteType    = c.weakTypeOf[Byte]
+  private val floatType   = c.weakTypeOf[Float]
+  private val bigDecimalType = c.weakTypeOf[java.math.BigDecimal]
   private val thriftType  = c.weakTypeOf[ThriftStruct]
 
   /** Converts a Scala type to a Hive type */
   private def convertScalaToHiveType(tpe: Type): HiveType = tpe match {
-    case typ if (typ <:< doubleType) => DoubleType
-    case typ if (typ <:< intType)    => IntType
+    case typ if (typ <:< doubleType)       => DoubleType
+    case typ if (typ <:< floatType)        => FloatType
+    case typ if (typ <:< longType)         => LongType
+    case typ if (typ <:< intType)          => IntType
+    case typ if (typ <:< shortType)        => ShortType
+    case typ if (typ <:< byteType)         => TinyIntType
+    case typ if (typ <:< booleanType)      => BooleanType
+    case typ if (typ <:< dateType)         => DateType
+    case typ if (typ <:< bigDecimalType)   => DecimalType(10, 0)
     case typ if (typ <:< stringType) => StringType
     case map if (map <:< mapType) => {
       val key :: value :: Nil = map.typeArgs

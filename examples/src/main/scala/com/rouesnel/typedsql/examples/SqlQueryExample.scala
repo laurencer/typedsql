@@ -18,7 +18,10 @@ import com.rouesnel.typedsql.{DataSource, ManualSqlStruct, Person, SqlQuery}
             "string" as string_value,
             map("key", 1.0, "key2", 2) as map_value,
             struct(1.0, "stringvalue", 0) as struct_value,
-            named_struct("field_name", 1, "field2", 2) as named_struct_value
+            named_struct("field_name", 1, "field2", 2) as named_struct_value,
+            cast(1 as boolean) as boolean_value,
+            cast(1 as tinyint) as tiny_int_value,
+            cast(1 as smallint) as small_int_value
       FROM ${people}
       WHERE age > ${minimumAge}
     """

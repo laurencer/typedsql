@@ -80,11 +80,16 @@ class ScroogeGenerator[Context <: whitebox.Context](val c: Context) {
    */
   def resolveType(structNamer: StructType => TypeName, fieldType: HiveType): Tree = fieldType match {
     case p: PrimitiveType             => p match {
-      case ShortType => tq"Short"
-      case IntType => tq"Int"
-      case LongType => tq"Long"
-      case DoubleType => tq"Double"
-      case StringType => tq"String"
+      case TinyIntType  => tq"Byte"
+      case ShortType    => tq"Short"
+      case IntType      => tq"Int"
+      case LongType     => tq"Long"
+      case FloatType    => tq"Float"
+      case DoubleType   => tq"Double"
+      case StringType   => tq"String"
+      case BooleanType  => tq"Boolean"
+      case DateType     => tq"java.util.Date"
+      case DecimalType(_, _) => tq"java.math.BigDecimal"
     }
     case ArrayType(valueType)         => tq"List[${resolveType(structNamer, valueType)}]"
     case MapType(keyType, valueType)  => tq"Map[${resolveType(structNamer, keyType)}, ${resolveType(structNamer, valueType)}]"
@@ -174,11 +179,16 @@ class ScroogeGenerator[Context <: whitebox.Context](val c: Context) {
     val placeholderFields = fields.map({ case (fieldName, hiveType) => {
       val placeholderValue = hiveType match {
         case p: PrimitiveType => p match {
-          case ShortType  => q"0"
-          case IntType    => q"0"
-          case LongType   => q"0L"
-          case DoubleType => q"0.0"
-          case StringType => q""" "" """
+          case BooleanType  => q"false"
+          case TinyIntType  => q"0.toByte"
+          case ShortType    => q"0"
+          case IntType      => q"0"
+          case LongType     => q"0L"
+          case FloatType    => q"0.0f"
+          case DoubleType   => q"0.0"
+          case DateType     => q"new java.util.Date()"
+          case DecimalType(_, _) => q"new java.math.BigDecimal()"
+          case StringType   => q""" "" """
         }
         case _ => q"null"
       }

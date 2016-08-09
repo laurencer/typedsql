@@ -16,7 +16,7 @@ object build extends Build {
   lazy val standardSettings =
     Defaults.coreDefaultSettings ++
     uniformPublicDependencySettings ++
-    strictDependencySettings ++
+    //strictDependencySettings ++
     Seq(
       concurrentRestrictions in Global += Tags.limit(Tags.Test, 1),
       dependencyOverrides += "com.chuusai" %% "shapeless" % "2.2.5" //until maestro is updated
@@ -52,21 +52,10 @@ object build extends Build {
     , settings =
       standardSettings
         ++ uniform.project("typedsql-core", "com.rouesnel.typedsql")
-        ++ uniformThriftSettings
-        ++ macroBuildSettings
         ++ Seq(
-        libraryDependencies ++=
-          depend.hadoopClasspath ++
-            depend.omnia("ebenezer", "0.22.2-20160619063420-4eb964f") ++
-            depend.parquet() ++
-            depend.testing() ++
-            depend.logging() ++
-            depend.hadoop() ++
-            depend.hive() ++
-            Seq(
-              "au.com.cba.omnia" %% "thermometer-hive" %  "1.4.2-20160414053315-99c196d",
-              "ch.qos.logback"    % "logback-classic"  % "1.0.13"
-            )
+        libraryDependencies ++= depend.scalaz() ++ Seq(
+          "com.lihaoyi" %% "fastparse" % "0.3.7"
+        )
       )
   )
 
@@ -88,8 +77,9 @@ object build extends Build {
           depend.hadoop() ++
           depend.hive() ++
           Seq(
-            "au.com.cba.omnia" %% "thermometer-hive" %  "1.4.2-20160414053315-99c196d",
-            "ch.qos.logback"    % "logback-classic"  % "1.0.13"
+            "au.com.cba.omnia"        %% "thermometer-hive" % "1.4.2-20160414053315-99c196d",
+            "ch.qos.logback"           % "logback-classic"  % "1.0.13",
+            "io.argonaut"             %% "argonaut"         % "6.1"
           )
       )
   ) dependsOn(core)

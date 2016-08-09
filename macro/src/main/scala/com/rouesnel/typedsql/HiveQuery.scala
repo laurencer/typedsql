@@ -1,17 +1,18 @@
 package com.rouesnel.typedsql
 
+import java.io.{FileInputStream, FileOutputStream}
 import java.util.Date
 
 import scala.language.experimental.macros
 import scala.util.control.NonFatal
-
 import org.apache.hadoop.hive.conf.HiveConf
 import org.apache.hadoop.hive.metastore.api._
 import org.apache.hadoop.hive.ql.Driver
 import org.apache.hadoop.hive.ql.parse._
 import org.apache.hadoop.hive.ql.session.SessionState
 
-import scalaz._, Scalaz._
+import scalaz._
+import Scalaz._
 
 import com.rouesnel.typedsql.core._
 
