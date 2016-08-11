@@ -43,7 +43,7 @@ object build extends Build {
         publishArtifact := false,
         onLoad in Global := ((s: State) => { "updateIdea" :: s}) compose (onLoad in Global).value
       )
-    , aggregate = Seq(macros, test, examples, intellij, intellijServer, intellijApi)
+    , aggregate = Seq(core, macros, test, examples, intellij, intellijServer, intellijApi)
   )
 
   lazy val core: Project = Project(
