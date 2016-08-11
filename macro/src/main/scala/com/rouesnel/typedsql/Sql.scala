@@ -36,6 +36,7 @@ object SqlQuery {
           val sqlLiteral = stats
             .collect({ case q"def query = $sqlQuery" => sqlQuery })
             .headOption
+            .map(c.typecheck(_))
             .getOrElse(c.abort(c.enclosingPosition, "Must have a function called `query`."))
             match {
               case Literal(Constant(code)) => code
