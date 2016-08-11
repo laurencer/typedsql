@@ -13,25 +13,27 @@ class SourceMapping(c: whitebox.Context) {
 
   def listMap[K, V](els: Seq[(K, V)]): ListMap[K, V] = ListMap(els: _*)
 
-  private val seqType     = c.weakTypeOf[Seq[_]]
-  private val mapType     = c.weakTypeOf[scala.collection.Map[_, _]]
-  private val intType     = c.weakTypeOf[Int]
-  private val longType     = c.weakTypeOf[Long]
-  private val booleanType     = c.weakTypeOf[Boolean]
-  private val doubleType  = c.weakTypeOf[Double]
-  private val stringType  = c.weakTypeOf[String]
-  private val dateType    = c.weakTypeOf[java.util.Date]
-  private val shortType   = c.weakTypeOf[Short]
-  private val byteType    = c.weakTypeOf[Byte]
-  private val floatType   = c.weakTypeOf[Float]
+  private val seqType       = c.weakTypeOf[Seq[_]]
+  private val mapType       = c.weakTypeOf[scala.collection.Map[_, _]]
+  private val intType       = c.weakTypeOf[Int]
+  private val longType      = c.weakTypeOf[scala.Long]
+  private val javaLongType  = c.weakTypeOf[java.lang.Long]
+  private val booleanType   = c.weakTypeOf[Boolean]
+  private val doubleType    = c.weakTypeOf[Double]
+  private val stringType    = c.weakTypeOf[String]
+  private val dateType      = c.weakTypeOf[java.util.Date]
+  private val shortType     = c.weakTypeOf[Short]
+  private val byteType      = c.weakTypeOf[Byte]
+  private val floatType     = c.weakTypeOf[Float]
   private val bigDecimalType = c.weakTypeOf[java.math.BigDecimal]
-  private val thriftType  = c.weakTypeOf[ThriftStruct]
+  private val thriftType    = c.weakTypeOf[ThriftStruct]
 
   /** Converts a Scala type to a Hive type */
   private def convertScalaToHiveType(tpe: Type): HiveType = tpe match {
     case typ if (typ <:< doubleType)       => DoubleType
     case typ if (typ <:< floatType)        => FloatType
     case typ if (typ <:< longType)         => LongType
+    case typ if (typ <:< javaLongType)     => LongType
     case typ if (typ <:< intType)          => IntType
     case typ if (typ <:< shortType)        => ShortType
     case typ if (typ <:< byteType)         => TinyIntType
@@ -51,9 +53,7 @@ class SourceMapping(c: whitebox.Context) {
       mapObjectTypeToHiveSchema(struct.companion)
     }
     case other => {
-      println(s"ERROR - ${other}")
-      println(showRaw(other))
-      c.abort(c.enclosingPosition, "ERRORED")
+      c.abort(c.enclosingPosition, s"Could not convert scala type ${other} (${showRaw(other)}) to a Hive Type.")
     }
   }
 
