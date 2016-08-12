@@ -11,6 +11,7 @@ import scala.reflect.macros._
 import scalaz._, Scalaz._
 
 import com.rouesnel.typedsql.core._
+import com.rouesnel.typedsql.util._
 
 @compileTimeOnly("enable macro paradise to expand macro annotations")
 class SqlQuery extends StaticAnnotation {
@@ -60,64 +61,52 @@ object SqlQuery {
             c.abort(c.enclosingPosition, s"Parameters and Sources classes cannot have fields with the same names. Please remove/rename the following duplicates: ${parametersSourcesIntersection.mkString(", ")}")
           }
 
-          // Retrieve the schema from the compiled query.
-          /*
-          val schema = HiveQuery.compileQuery(hiveConf, sources, parameters, sqlStatement)
-            .fold(ex => c.abort(c.enclosingPosition, ex.toString), identity)
-
-          // Parse the types from the schema.
-          val outputRecordFields = schema.getFieldSchemas.asScala.map(fieldSchema => {
-            val fieldName = fieldSchema.getName
-            val fieldType =
-              HiveType.parseHiveType(fieldSchema.getType)
-                  .fold(missingType => c.abort(c.enclosingPosition, s"Could not find Scala type to match Hive type ${missingType} (in ${fieldSchema.getType}) for column ${fieldName}"), identity)
-            (fieldName, fieldType)
-          }).toList
-
-          */
-
-          val outputRecordFields = HiveCache.cached(hiveConf, sources, parameters, sqlStatement)(schema => {
-            schema.getFieldSchemas.asScala.map(fieldSchema => {
-              val fieldName = fieldSchema.getName
-              val fieldType =
-                HiveType.parseHiveType(fieldSchema.getType)
-                  .fold(missingType => c.abort(c.enclosingPosition, s"Could not find Scala type to match Hive type ${missingType} (in ${fieldSchema.getType}) for column ${fieldName}"), identity)
-              (fieldName, fieldType)
-            }).toList
-          })
-
-          // Map all nested fields on the top-level schema to a struct
-          // E.g. SELECT * FROM test1 INNER JOIN test2
-          // will return test1.foo, test1.bar, test2.baz, test2.bax
-          //
-          // test1 and test2 should form reusable structs.
-          val implicitStructs = outputRecordFields
-              .collect({ case (fieldName, fieldType) if fieldName.contains(".") => {
-                val fieldParts = fieldName.split("\\.").toList
-                (fieldParts.dropRight(1), (fieldParts.last, fieldType))
-              }})
-            .groupBy({ case (parent, (fieldName, fieldType)) => parent })
-            .mapValues(_.map({ case (parent, fieldInfo) => fieldInfo }))
-            .mapValues(fields => StructType(ListMap(fields: _*)))
+          val outputRecordFields = ExceptionString.rerouteErrPrintStream {
+            HiveCache.cached(hiveConf, sources, parameters, sqlStatement)(schema => {
+              Option(schema).map(_.getFieldSchemas.asScala.map(fieldSchema => {
+                val fieldName = fieldSchema.getName
+                val fieldType =
+                  HiveType.parseHiveType(fieldSchema.getType)
+                    .fold(missingType => c.abort(c.enclosingPosition, s"Could not find Scala type to match Hive type ${missingType} (in ${fieldSchema.getType}) for column ${fieldName}"), identity)
+                (fieldName, fieldType)
+              }).toList
+              ).getOrElse(
+                c.abort(c.enclosingPosition, s"Could not evaluate Hive Schema for ${tpname}")
+              )
+            }).fold(
+              ex => c.abort(c.enclosingPosition, s"Error compiling Hive Query for ${tpname}: ${ex}\n${ExceptionString(ex)}"),
+              identity
+            )
+          }
 
           // Find all the structs to generate appropriate types.
           val structs = outputRecordFields
             .flatMap({ case (_, hiveType) => hiveType.allTypes })
-            .toList
             .collect({ case struct: StructType => struct})
 
-          // Map the nested structs to the generated ones and remove any nested fields
-          val fieldsToGenerate = outputRecordFields
-            .filter({ case (fieldName, _) => !fieldName.contains(".") }) ++
-            implicitStructs.toList.map({ case (fieldNameParts, fieldStruct) =>
-              fieldNameParts.mkString(".") -> fieldStruct
-            })
+          // The schema represents wildcard types using "<source>.<field>" whilst these fields
+          // will be outputted in Parquet as just "<field>" so the <source> part needs to be
+          // dropped.
+          val fieldsToGenerate = outputRecordFields.map({
+            case (fieldName, typ) => fieldName.split("\\.").last -> typ
+          }).toList
+
+          // Check to see that we don't have any duplicate column names.
+          val namesToOriginalSources = outputRecordFields.map({
+            case (fieldName, typ) => fieldName.split("\\.").last -> fieldName
+          }).groupBy(_._1)
+          if (namesToOriginalSources.values.exists(_.size > 1)) {
+            val prettyNames = namesToOriginalSources.values.filter(_.size > 1).flatMap(_.map({
+              case (name, source) => s"- ${name} is mapped to ${source}"
+            })).mkString("\n")
+            c.abort(c.enclosingPosition, s"Hive Query for ${tpname} would result in duplicate names:\n${prettyNames}")
+          }
 
           // Make the returned row itself a struct for simplicity/elegance.
           val outputRecord = StructType(ListMap(fieldsToGenerate: _*))
 
           // Compose all of the structs together.
-          val allStructs = (outputRecord +: (implicitStructs.values.toList ++ structs))
+          val allStructs = (outputRecord +: structs)
             .zipWithIndex
             .toMap
 
@@ -165,6 +154,7 @@ object SqlQuery {
         case _ => c.abort(c.enclosingPosition, "Annotation @SqlQuery can only apply to objects")
       }
     }
+
     c.Expr[Any](result)
   }
 }

@@ -90,3 +90,8 @@ The `Row` class generated on the object is usable directly in Scalding flows or 
     """
 }
 ```
+
+## Debugging
+
+Setting the `PRINT_TYPEDSQL_CLASSES` environment variable for your `sbt` session will cause
+TypedSQL to print all generated/modified objects out during compilation.

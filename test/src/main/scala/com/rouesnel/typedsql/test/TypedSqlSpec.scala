@@ -5,15 +5,27 @@ import java.util.Date
 import scala.util.Random
 import au.com.cba.omnia.ebenezer.ParquetLogging
 import au.com.cba.omnia.thermometer.hive.ThermometerHiveSpec
-import com.rouesnel.typedsql.{DataSource, HiveSupport, TypedPipeDataSource}
+import com.rouesnel.typedsql.{DataSource, TypedPipeDataSource}
 import com.rouesnel.typedsql.DataSource.Config
-import com.twitter.scalding._
-import TDsl._
+import au.com.cba.omnia.beeswax.Hive
 import com.twitter.scalding.typed.IterablePipe
 import com.twitter.scrooge.ThriftStruct
 
 abstract class TypedSqlSpec extends ThermometerHiveSpec with ParquetLogging {
   def randomPositive = math.abs(Random.nextLong())
+
+  override def before = {
+    super[ThermometerHiveSpec].before
+    // Create a default database as required.
+    Hive.createDatabase("default")
+      .run(hiveConf)
+      .foldAll(
+        identity,
+        err       => throw new Exception(err),
+        ex        => throw ex,
+        (err, ex) => throw new Exception(err, ex)
+      )
+  }
 
   /** Configuration used to the test */
   def testConfig = Config(

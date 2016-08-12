@@ -68,29 +68,30 @@ object HiveQuery {
     SessionState.start(hiveConf)
     SessionState.get().setIsSilent(true)
     val dbName = s"test_${new Date().getTime}"
-    try {
-      // Create the compilation environment
-      createCompilationEnvironment(dbName, hiveConf, sources)
 
-      // Initialise the variable substitution
-      val sourceVariables =
-        sources
-          .keys
-          .map(tableName => tableName -> s"${dbName}.${tableName}")
-          .toMap
+    // Create the compilation environment
+    createCompilationEnvironment(dbName, hiveConf, sources)
 
-      val variables =
-        (sourceVariables ++ parameterVariables)
-          .asJava
+    // Initialise the variable substitution
+    val sourceVariables =
+      sources
+        .keys
+        .map(tableName => tableName -> s"${dbName}.${tableName}")
+        .toMap
 
+    val variables =
+      (sourceVariables ++ parameterVariables)
+        .asJava
+
+    \/.fromTryCatchNonFatal {
       SessionState.get().setHiveVariables(variables)
 
       // Run the query.
-      driver.init()
-      driver.compile(query)
-      \/.right(driver.getSchema())
-    } catch {
-      case NonFatal(ex) => \/.left(new Exception(s"Error trying to run query '$query'", ex))
+      util.ExceptionString.rerouteErrPrintStream {
+        driver.init()
+        driver.compile(query)
+        driver.getSchema()
+      }
     }
   }
 
