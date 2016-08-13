@@ -30,6 +30,7 @@ object SqlQuery {
     import c.universe._
     val sourceMapping = new SourceMapping(c)
     val parameterMapping = new ParameterMapping(c)
+    val udfMapping = new UDFMapping[c.type](c)
 
     val result = {
       annottees.map(_.tree).toList match {
@@ -55,6 +56,11 @@ object SqlQuery {
           // Get the parameters.
           val parameters = parameterMapping.readParametersClass(stats)
 
+          // Get any UDFs.
+          val udfs = udfMapping.readUDFs(stats)
+          val udfDescriptions = udfs.map({ case (description, _) => description })
+          val udfImplementations = udfs.map({ case (_, impl) => impl })
+
           // Check no overlap between parameter and source names (they share the same namespace)
           val parametersSourcesIntersection = sources.keySet.intersect(parameters.keySet)
           if (parametersSourcesIntersection.nonEmpty) {
@@ -62,7 +68,7 @@ object SqlQuery {
           }
 
           val outputRecordFields = ExceptionString.rerouteErrPrintStream {
-            HiveCache.cached(hiveConf, sources, parameters, sqlStatement)(schema => {
+            HiveCache.cached(hiveConf, sources, parameters, udfDescriptions, sqlStatement)(schema => {
               Option(schema).map(_.getFieldSchemas.asScala.map(fieldSchema => {
                 val fieldName = fieldSchema.getName
                 val fieldType =
@@ -89,7 +95,7 @@ object SqlQuery {
           // dropped.
           val fieldsToGenerate = outputRecordFields.map({
             case (fieldName, typ) => fieldName.split("\\.").last -> typ
-          }).toList
+          })
 
           // Check to see that we don't have any duplicate column names.
           val namesToOriginalSources = outputRecordFields.map({
@@ -139,14 +145,28 @@ object SqlQuery {
             q"Map(..${literals})"
           }
 
+          def createUdfMap() = {
+            val literals = udfDescriptions.toList.map(udf => {
+              q"${Literal(Constant(udf.name))} -> classOf[${TypeName("UDF_" + udf.name)}].asInstanceOf[Class[org.apache.hadoop.hive.ql.udf.generic.GenericUDF]]"
+            })
+            q"Map(..${literals})"
+          }
+
           val amendedParents = parents :+ tq"com.rouesnel.typedsql.CompiledSqlQuery"
           q"""$mods object $tpname extends ..$amendedParents {
             ..$stats
 
             ..${generatedStructs}
 
+            ..${udfImplementations}
+
             def apply(srcs: Sources, params: Parameters): com.rouesnel.typedsql.DataSource[Row] = {
-             com.rouesnel.typedsql.HiveQueryDataSource[Row](query, ${readParametersAsMap("params", parameters.keys)}, ${readSourcesAsMap("srcs", sources.keys)})
+             com.rouesnel.typedsql.HiveQueryDataSource[Row](
+               query,
+               ${readParametersAsMap("params", parameters.keys)},
+               ${readSourcesAsMap("srcs", sources.keys)},
+               ${createUdfMap()}
+              )
             }
           }"""
 

@@ -3,18 +3,17 @@ package com.rouesnel.typedsql
 import java.io.{FileInputStream, FileOutputStream}
 
 import scala.language.experimental.macros
-
 import org.apache.hadoop.hive.conf.HiveConf
 import org.apache.hadoop.hive.metastore.api._
 import org.apache.hadoop.hive.ql.Driver
 
 import scalaz._
 import Scalaz._
-
 import com.rouesnel.typedsql.core._
 import com.rouesnel.typedsql.util._
-
-import argonaut._, Argonaut._
+import argonaut._
+import Argonaut._
+import com.rouesnel.typedsql.udf.UdfDescription
 
 /**
  * Provides a caching mechanism that persists Hive results to the target folder to improve
@@ -33,15 +32,17 @@ object HiveCache {
     (ht: HiveType) => ht.hiveType
   )("hive_type")
 
-  implicit def requestCodec = casecodec4(Request.apply _, Request.unapply _)(
+  implicit def requestCodec = casecodec5(Request.apply _, Request.unapply _)(
     "sources",
     "parameters",
+    "udfs",
     "query",
     "version"
   )
 
   case class Request(sources: Map[String, StructType],
                      parameterVariables: Map[String, String],
+                     udfs: List[UdfDescription],
                      query: String,
                      version: Int = 0)
 
@@ -50,10 +51,10 @@ object HiveCache {
 
   case class Compiled(request: Request, compiledSchema: List[(String, HiveType)])
 
-  def cached(driver: Driver, hiveConf: HiveConf, sources: Map[String, StructType], parameterVariables: Map[String, String], query: String)
+  def cached(driver: Driver, hiveConf: HiveConf, sources: Map[String, StructType], parameterVariables: Map[String, String], udfs: List[UdfDescription], query: String)
             (f: Schema => List[(String, HiveType)]): Throwable \/ List[(String, HiveType)] =
     \/.fromTryCatchNonFatal {
-      val request = Request(sources, parameterVariables, query)
+      val request = Request(sources, parameterVariables, udfs, query)
       val pickledRequest = request.asJson.spaces2.getBytes()
       val hashedRequest = scala.util.hashing.MurmurHash3.bytesHash(pickledRequest)
 
@@ -93,7 +94,7 @@ object HiveCache {
         case None => {
           println("No cache exists for Hive query - evaluating...")
           val compiled = ExceptionString.rerouteErrPrintStream(HiveQuery
-            .compileQuery(driver, hiveConf, sources, parameterVariables, query)
+            .compileQuery(driver, hiveConf, sources, parameterVariables, udfs, query)
             .fold(ex => throw ex, identity))
 
           try {
@@ -114,11 +115,11 @@ object HiveCache {
     }
 
 
-  def cached(hiveConf: HiveConf, sources: Map[String, StructType], parameterVariables: Map[String, String], query: String)
+  def cached(hiveConf: HiveConf, sources: Map[String, StructType], parameterVariables: Map[String, String], udfs: List[UdfDescription], query: String)
             (f: Schema => List[(String, HiveType)]): Throwable \/ List[(String, HiveType)] = HiveSupport.useHiveClassloader {
     \/.fromTryCatchNonFatal(new Driver(hiveConf))
       .flatMap(driver => {
-        val result = cached(driver, hiveConf, sources, parameterVariables, query)(f)
+        val result = cached(driver, hiveConf, sources, parameterVariables, udfs, query)(f)
         driver.close()
         driver.destroy()
         result

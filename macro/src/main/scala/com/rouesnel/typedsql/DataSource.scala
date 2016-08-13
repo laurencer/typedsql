@@ -11,7 +11,9 @@ import org.apache.hadoop.hive.ql.Driver
 import org.apache.hadoop.hive.ql.session.SessionState
 import au.com.cba.omnia.ebenezer.scrooge.ParquetScroogeSource
 import org.apache.hadoop.fs.Path
+import org.apache.hadoop.hive.ql.exec.FunctionRegistry
 import org.apache.hadoop.hive.ql.parse.VariableSubstitution
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDF
 
 import scala.util.Random
 import scala.util.control.NonFatal
@@ -72,7 +74,8 @@ case class TypedPipeDataSource[T <: ThriftStruct : Manifest](pipe: TypedPipe[T])
  */
 case class HiveQueryDataSource[T <: ThriftStruct : Manifest](query: String,
                                parameters: Map[String, String],
-                               sources: Map[String, DataSource[_]]
+                               sources: Map[String, DataSource[_]],
+                               udfs: Map[String, Class[GenericUDF]]
                               ) extends DataSource[T] {
 
   def toHiveView(config: DataSource.Config): Execution[HiveView] =
@@ -99,6 +102,8 @@ case class HiveQueryDataSource[T <: ThriftStruct : Manifest](query: String,
         createDatabaseQuery.map(driver.run(_)).filter(_.getResponseCode != 0).foreach(resp => {
           throw new Exception(s"Error creating database ${databaseName}. ${resp.getErrorMessage}")
         })
+
+        udfs.toList.map({ case (name, clazz) => FunctionRegistry.registerTemporaryGenericUDF(name, clazz) })
 
         val createQuery =
           s"""
@@ -145,6 +150,8 @@ case class HiveQueryDataSource[T <: ThriftStruct : Manifest](query: String,
         createDatabaseQuery.map(driver.run(_)).filter(_.getResponseCode != 0).foreach(resp => {
           throw new Exception(s"Error creating database ${databaseName}. ${resp.getErrorMessage}")
         })
+
+        udfs.toList.map({ case (name, clazz) => FunctionRegistry.registerTemporaryGenericUDF(name, clazz) })
 
         val createQuery =
           s"""

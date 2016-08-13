@@ -1,0 +1,18 @@
+package com.rouesnel.typedsql.udf
+
+class PlaceholderUDF0  extends PlaceholderUDF(0)
+class PlaceholderUDF1  extends PlaceholderUDF(1)
+class PlaceholderUDF2  extends PlaceholderUDF(2)
+class PlaceholderUDF3  extends PlaceholderUDF(3)
+class PlaceholderUDF4  extends PlaceholderUDF(4)
+class PlaceholderUDF5  extends PlaceholderUDF(5)
+class PlaceholderUDF6  extends PlaceholderUDF(6)
+class PlaceholderUDF7  extends PlaceholderUDF(7)
+class PlaceholderUDF8  extends PlaceholderUDF(8)
+class PlaceholderUDF9  extends PlaceholderUDF(9)
+class PlaceholderUDF10 extends PlaceholderUDF(10)
+class PlaceholderUDF11 extends PlaceholderUDF(11)
+class PlaceholderUDF12 extends PlaceholderUDF(12)
+class PlaceholderUDF13 extends PlaceholderUDF(13)
+class PlaceholderUDF14 extends PlaceholderUDF(14)
+class PlaceholderUDF15 extends PlaceholderUDF(15)

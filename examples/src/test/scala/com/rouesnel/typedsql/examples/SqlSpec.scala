@@ -41,6 +41,8 @@ class SqlSpec extends TypedSqlSpec { def is = s2"""
 
     record.namedStructValue.fieldName  must beEqualTo(1)
     record.namedStructValue.field2     must beEqualTo(2)
+
+    record.udfApplied must beEqualTo("0,1,2,3,4,5")
     ok
   }
 }

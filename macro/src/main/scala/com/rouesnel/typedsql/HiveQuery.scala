@@ -13,8 +13,9 @@ import org.apache.hadoop.hive.ql.session.SessionState
 
 import scalaz._
 import Scalaz._
-
 import com.rouesnel.typedsql.core._
+import com.rouesnel.typedsql.udf.{PlaceholderUDF, UdfDescription}
+import org.apache.hadoop.hive.ql.exec.FunctionRegistry
 
 /** Provides helpers for parsing/manipulating Hive queries */
 object HiveQuery {
@@ -41,10 +42,10 @@ object HiveQuery {
    * @param query query to compile
    * @return error or the compiled Hive Schema
    */
-  def compileQuery(hiveConf: HiveConf, sources: Map[String, StructType], parameterVariables: Map[String, String], query: String): Throwable \/ Schema = HiveSupport.useHiveClassloader {
+  def compileQuery(hiveConf: HiveConf, sources: Map[String, StructType], parameterVariables: Map[String, String], udfs: List[UdfDescription], query: String): Throwable \/ Schema = HiveSupport.useHiveClassloader {
     val driver = new Driver(hiveConf)
     try {
-      compileQuery(driver, hiveConf, sources, parameterVariables, query)
+      compileQuery(driver, hiveConf, sources, parameterVariables, udfs, query)
     } finally {
       driver.close()
       driver.destroy()
@@ -64,7 +65,7 @@ object HiveQuery {
    * @param query query to compile
    * @return error or the compiled Hive Schema
    */
-  def compileQuery(driver: Driver, hiveConf: HiveConf, sources: Map[String, StructType], parameterVariables: Map[String, String], query: String): Throwable \/ Schema = HiveSupport.useHiveClassloader {
+  def compileQuery(driver: Driver, hiveConf: HiveConf, sources: Map[String, StructType], parameterVariables: Map[String, String], udfs: List[UdfDescription], query: String): Throwable \/ Schema = HiveSupport.useHiveClassloader {
     SessionState.start(hiveConf)
     SessionState.get().setIsSilent(true)
     val dbName = s"test_${new Date().getTime}"
@@ -83,14 +84,25 @@ object HiveQuery {
       (sourceVariables ++ parameterVariables)
         .asJava
 
-    \/.fromTryCatchNonFatal {
-      SessionState.get().setHiveVariables(variables)
+    // Need to synchronize here because the functions and placeholder UDFs are global.
+    PlaceholderUDF.synchronized {
+      \/.fromTryCatchNonFatal {
+        SessionState.get().setHiveVariables(variables)
 
-      // Run the query.
-      util.ExceptionString.rerouteErrPrintStream {
-        driver.init()
-        driver.compile(query)
-        driver.getSchema()
+        PlaceholderUDF.configurePlaceholders(udfs)((udf, udfClazz) =>
+          FunctionRegistry.registerTemporaryFunction(udf.name, udfClazz)
+        ).fold(err => throw new Exception(err), identity)
+
+        // Run the query.
+        util.ExceptionString.rerouteErrPrintStream {
+          driver.init()
+          driver.compile(query)
+          val result = driver.getSchema()
+
+          udfs.foreach(udf => FunctionRegistry.unregisterTemporaryUDF(udf.name))
+
+          result
+        }
       }
     }
   }

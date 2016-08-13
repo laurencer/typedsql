@@ -1,6 +1,6 @@
 package com.rouesnel.typedsql.examples
 
-import com.rouesnel.typedsql.{DataSource, ManualSqlStruct, Person, SqlQuery}
+import com.rouesnel.typedsql._
 
 @SqlQuery object SqlQueryExample {
 
@@ -10,6 +10,10 @@ import com.rouesnel.typedsql.{DataSource, ManualSqlStruct, Person, SqlQuery}
                     )
 
   case class Parameters(minimumAge: Int)
+
+  @UDF def myUdf(input: Int): String = (0 to input).toList.mkString(",")
+
+  @com.rouesnel.typedsql.UDF def myOtherUdf(input: Double): Int = ???
 
   def query =
     """
@@ -21,7 +25,8 @@ import com.rouesnel.typedsql.{DataSource, ManualSqlStruct, Person, SqlQuery}
             named_struct("field_name", 1, "field2", 2) as named_struct_value,
             cast(1 as boolean) as boolean_value,
             cast(1 as tinyint) as tiny_int_value,
-            cast(1 as smallint) as small_int_value
+            cast(1 as smallint) as small_int_value,
+            myUdf(5) as udf_applied
       FROM ${people}
       WHERE age > ${minimumAge}
     """
