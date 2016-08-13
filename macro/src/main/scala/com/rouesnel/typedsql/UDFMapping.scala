@@ -48,12 +48,18 @@ class UDFMapping[C <: whitebox.Context](val c: C) {
     }
   }
 
+  private def primitiveMatchers(typ: HiveType): List[CaseDef] = typ match {
+    case IntType       => List(cq"iw: org.apache.hadoop.io.IntWritable => iw.get()")
+    case DoubleType    => List(cq"iw: org.apache.hadoop.io.IntWritable => iw.get()")
+    case StringType    => List(cq"str: String => str")
+  }
+
   private def generateUdf(udf: UdfDescription, body: Tree): Tree = {
 
     val parameterAccessors = udf.arguments.zipWithIndex.map({
       case ((name, typ), idx) =>
         q"""val ${TermName(name)} = (${hiveTypeToUdfInspector(typ)}.getPrimitiveJavaObject(_parameters(${Literal(Constant(idx))}).get()) match {
-              case iw: org.apache.hadoop.io.IntWritable => iw.get()
+              case ..${primitiveMatchers(typ)}
             }).asInstanceOf[${hiveTypeToScalaType(typ)}]
          """
     })
@@ -81,7 +87,7 @@ class UDFMapping[C <: whitebox.Context](val c: C) {
        override def evaluate(_parameters: Array[DeferredObject]): AnyRef = {
          ..$parameterAccessors
 
-         $body
+         ($body).asInstanceOf[AnyRef]
        }
      }
     """

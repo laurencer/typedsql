@@ -96,11 +96,13 @@ object build extends Build {
       standardSettings
         ++ uniform.project("typedsql-examples", "com.rouesnel.typedsql.examples")
         ++ uniformThriftSettings
+        ++ uniformAssemblySettings
         ++ macroBuildSettings
         ++ publishSettings
         ++ Seq(
           conflictManager := ConflictManager.default,
           parallelExecution in Test := false,
+          sbt.Keys.test in assembly := {},
           // fork in Test := true,
           // fork in Compile := true,
           libraryDependencies ++=
@@ -117,7 +119,21 @@ object build extends Build {
                 "au.com.cba.omnia" %% "coppersmith-core"     % coppersmithVersion,
                 "au.com.cba.omnia" %% "coppersmith-scalding" % coppersmithVersion,
                 "au.com.cba.omnia" %% "coppersmith-tools"    % coppersmithVersion
-              )
+              ),
+          // Exclude the datanucleus jars.
+          assemblyExcludedJars in assembly := {
+            val cp = (fullClasspath in assembly).value
+            cp.filter(_.data.getPath.contains("org.datanucleus"))
+          },
+          assembly := {
+            val assembledJar = assembly.value
+            val cp = (fullClasspath in assembly).value
+            cp.filter(_.data.getPath.contains("org.datanucleus")).foreach(jar => {
+              println(s"Copying non-assemble-able jar: ${jar.data.getName}")
+              IO.copyFile(jar.data, new File(assembledJar.getParentFile, jar.data.getName))
+            })
+            assembledJar
+          }
       )
   ) dependsOn(macros, test % "test->compile")
 

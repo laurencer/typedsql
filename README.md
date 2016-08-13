@@ -91,6 +91,22 @@ The `Row` class generated on the object is usable directly in Scalding flows or 
 }
 ```
 
+## Examples
+
+A number of examples are included in the `examples` sub-project (these are also used as test cases). 
+
+Some examples can be run on a real Hadoop cluster by executing `./sbt examples/assembly` and then
+copying the jars in the `examples/target/scala-2.11/*.jar` to your cluster.
+
+These can then be run using:
+
+```
+RUN_DIRECTORY=`pwd`
+hadoop jar typedsql-examples-assembly-0.1.0-SNAPSHOT.jar com.rouesnel.typedsql.examples.App --hdfs -libjars ${RUN_DIRECTORY}/datanucleus-api-jdo-3.2.6.jar,${RUN_DIRECTORY}/datanucleus-core-3.2.10.jar,${RUN_DIRECTORY}/datanucleus-rdbms-3.2.9.jar
+
+```
+
+
 ## Debugging
 
 Setting the `PRINT_TYPEDSQL_CLASSES` environment variable for your `sbt` session will cause
