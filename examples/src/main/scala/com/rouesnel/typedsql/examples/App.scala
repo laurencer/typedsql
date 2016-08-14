@@ -38,7 +38,6 @@ object App extends ExecutionApp {
 
   def job = Execution.getConfigMode.flatMap({ case (appConfig, Hdfs(_, conf)) => {
 
-    /*
     val customers: DataSource[Customer] = TypedPipeDataSource(
       TypedPipe.from(IterableSource(
         Customer(123, "Bob",   "Brown", date, "bb@email.com", Some("MALE"), 32)
@@ -51,7 +50,7 @@ object App extends ExecutionApp {
       TypedPipe.from(IterableSource(
         Order("O_000098", 123, date, None, None, None)
       ))
-    )*/
+    )
 
     val step1: DataSource[Step1.Row] =
       Step1.query.persist(reuseExisting("step1", "example.step1", "examples/step1"))
@@ -69,4 +68,37 @@ object App extends ExecutionApp {
       println(tried)
     }).map(_ => ())
   }})
+}
+
+object FakeData {
+  import scala.util.Random
+
+  def fakeFirstName(r: Random) = ???
+  def fakeLastName(r: Random) = ???
+  def fakeEmailAddress(r: Random) = ???
+  def fakeGender(r: Random): Option[String] = r.shuffle(
+    None,
+    Some(""),
+    Some("m"),
+    Some("M"),
+    Some("male"),
+    Some("Male"),
+    Some("MALE"),
+    Some("f"),
+    Some("F"),
+    Some("female"),
+    Some("Female"),
+    Some("FEMALE")
+  ).head
+
+  def fakeAge(r: Random) = r.nextInt(60) + 15
+
+  def customer(r: Random) = Customer(
+    math.abs(r.nextInt()),
+    fakeFirstName(r),
+    fakeLastName(r),
+    fakeEmailAddress(r),
+    fakeGender(r),
+    fakeAge(r)
+  )
 }
