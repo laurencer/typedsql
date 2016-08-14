@@ -17,7 +17,10 @@ import com.rouesnel.typedsql.DataSource
 
 @SqlQuery object TypedSqlCoppersmithExample {
 
-  def query =
+  def query(minimumAge: Int)(customers: DataSource[Customer],
+            orders: DataSource[Order],
+            orderLineItems: DataSource[OrderLineItem],
+            payments: DataSource[Payment]) =
     """
       SELECT c.customer_id     as customer_id,
              c.age             as age,
@@ -30,14 +33,6 @@ import com.rouesnel.typedsql.DataSource
        WHERE c.age > ${minimumAge}
        GROUP BY c.customer_id, c.age
     """
-
-  case class Sources(customers: DataSource[Customer],
-                     orders: DataSource[Order],
-                     orderLineItems: DataSource[OrderLineItem],
-                     payments: DataSource[Payment])
-
-  case class Parameters(minimumAge: Int)
-
 
   object Features extends BasicFeatureSet[Row] {
     val namespace          = "typedsql.example"

@@ -16,10 +16,7 @@ class WildCardSpec extends TypedSqlSpec { def is = sequential ^ s2"""
   def people = createDataSource(Person("Bob", "Brown", 28))
 
   def wildcardExample = {
-    val ds = WildcardExample(
-      WildcardExample.Sources(people),
-      WildcardExample.Parameters()
-    )
+    val ds = WildcardExample.query(people)
 
     val result = executeDataSource(ds)
 
@@ -37,15 +34,8 @@ class WildCardSpec extends TypedSqlSpec { def is = sequential ^ s2"""
   }
 
   def wildcardChainedExample = {
-    val wc = WildcardExample(
-      WildcardExample.Sources(people),
-      WildcardExample.Parameters()
-    )
-
-    val ds = WildcardChainedExample(
-      WildcardChainedExample.Sources(wc),
-      WildcardChainedExample.Parameters()
-    )
+    val wc = WildcardExample.query(people)
+    val ds = WildcardChainedExample.query(wc)
 
     val result = executeDataSource(ds)
 
@@ -63,11 +53,7 @@ class WildCardSpec extends TypedSqlSpec { def is = sequential ^ s2"""
     ok
   }
   def wildcardExplicitExample = {
-    val ds = WildcardExplicitExample(
-      WildcardExplicitExample.Sources(people),
-      WildcardExplicitExample.Parameters()
-    )
-
+    val ds = WildcardExplicitExample.query(people)
     val result = executeDataSource(ds)
 
     println()
@@ -83,15 +69,9 @@ class WildCardSpec extends TypedSqlSpec { def is = sequential ^ s2"""
     ok
   }
   def wildcardExplicitChainedExample = {
-    val wc = WildcardExplicitExample(
-      WildcardExplicitExample.Sources(people),
-      WildcardExplicitExample.Parameters()
-    )
+    val wc = WildcardExplicitExample.query(people)
 
-    val ds = WildcardExplicitChainedExample(
-      WildcardExplicitChainedExample.Sources(wc),
-      WildcardExplicitChainedExample.Parameters()
-    )
+    val ds = WildcardExplicitChainedExample.query(wc)
 
     val result = executeDataSource(ds)
 

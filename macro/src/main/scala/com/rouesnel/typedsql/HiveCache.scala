@@ -93,9 +93,9 @@ object HiveCache {
         case Some(schema) => schema
         case None => {
           println("No cache exists for Hive query - evaluating...")
-          val compiled = ExceptionString.rerouteErrPrintStream(HiveQuery
+          val compiled = HiveQuery
             .compileQuery(driver, hiveConf, sources, parameterVariables, udfs, query)
-            .fold(ex => throw ex, identity))
+            .fold(ex => throw ex, identity)
 
           try {
             cachedFile.createNewFile()

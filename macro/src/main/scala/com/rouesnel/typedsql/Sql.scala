@@ -35,15 +35,26 @@ object SqlQuery {
     val result = {
       annottees.map(_.tree).toList match {
         case q"$mods object $tpname extends ..$parents { ..$stats }" :: Nil => {
-          val sqlLiteral = stats
-            .collect({ case q"def query = $sqlQuery" => sqlQuery })
+          val (queryParams, sqlLiteral) = stats
+            .collect({
+              // When updating here - you also need to change remainingMembers below
+              case q"$mods def query(...${paramss}) = $sqlQuery" => (paramss, sqlQuery)
+              case q"def query = $sqlQuery"                      => (Seq.empty, sqlQuery)
+            })
             .headOption
-            .map(c.typecheck(_))
-            .getOrElse(c.abort(c.enclosingPosition, "Must have a function called `query`."))
+            .map({ case (params, query) => params -> c.typecheck(query) })
+            .getOrElse(c.abort(c.enclosingPosition, "Must have a function called `query()`."))
             match {
-              case Literal(Constant(code)) => code
+              case (params, Literal(Constant(code))) => params -> code
               case _ => c.abort(c.enclosingPosition, "Query function must be a literal string.")
           }
+
+          // When updating here - you also need to change the collect function above
+          val remainingMembers = stats.filter({
+            case q"$mods def query(...${paramss}) = $sqlQuery" => false
+            case q"def query = $sqlQuery"                      => false
+            case _ => true
+          })
 
           val sqlStatement = sqlLiteral.toString.trim.replaceAll("\\n", " ")
           if (sqlStatement.split(";").length != 1) {
@@ -51,10 +62,12 @@ object SqlQuery {
           }
 
           // Get sources and create temp tables mapping to them.
-          val sources = sourceMapping.readSourcesClass(stats)
+          // This also returns a list of parameters that were not sources (for
+          // processing as regular variables).
+          val (nonSourceParameters, sources) = sourceMapping.readSources(queryParams.flatten)
 
-          // Get the parameters.
-          val parameters = parameterMapping.readParametersClass(stats)
+          // Get/parse the remaining parameters.
+          val parameters = parameterMapping.readParameters(nonSourceParameters)
 
           // Get any UDFs.
           val udfs = udfMapping.readUDFs(stats)
@@ -67,7 +80,7 @@ object SqlQuery {
             c.abort(c.enclosingPosition, s"Parameters and Sources classes cannot have fields with the same names. Please remove/rename the following duplicates: ${parametersSourcesIntersection.mkString(", ")}")
           }
 
-          val outputRecordFields = ExceptionString.rerouteErrPrintStream {
+          val outputRecordFields =
             HiveCache.cached(hiveConf, sources, parameters, udfDescriptions, sqlStatement)(schema => {
               Option(schema).map(_.getFieldSchemas.asScala.map(fieldSchema => {
                 val fieldName = fieldSchema.getName
@@ -83,7 +96,6 @@ object SqlQuery {
               ex => c.abort(c.enclosingPosition, s"Error compiling Hive Query for ${tpname}: ${ex}\n${ExceptionString(ex)}"),
               identity
             )
-          }
 
           // Find all the structs to generate appropriate types.
           val structs = outputRecordFields
@@ -131,16 +143,16 @@ object SqlQuery {
             scroogeGenerator.generateStruct(s => structName(s), struct)
           }})
 
-          def readParametersAsMap(sourcesObjectName: String, fields: Iterable[String]) = {
+          def readParametersAsMap(fields: Iterable[String]) = {
             val literals = fields.toList.map(parameterName => {
-              q"${Literal(Constant(parameterName))} -> com.rouesnel.typedsql.SqlParameter.write(${TermName(sourcesObjectName)}.${TermName(parameterName)})"
+              q"${Literal(Constant(parameterName))} -> com.rouesnel.typedsql.SqlParameter.write(${TermName(parameterName)})"
             })
             q"Map(..${literals})"
           }
 
-          def readSourcesAsMap(sourcesObjectName: String, fields: Iterable[String]) = {
+          def readSourcesAsMap(fields: Iterable[String]) = {
             val literals = fields.toList.map(parameterName => {
-              q"${Literal(Constant(parameterName))} -> ${TermName(sourcesObjectName)}.${TermName(parameterName)}"
+              q"${Literal(Constant(parameterName))} -> ${TermName(parameterName)}"
             })
             q"Map(..${literals})"
           }
@@ -154,18 +166,21 @@ object SqlQuery {
 
           val amendedParents = parents :+ tq"com.rouesnel.typedsql.CompiledSqlQuery"
           q"""$mods object $tpname extends ..$amendedParents {
-            ..$stats
+            ..$remainingMembers
 
             ..${generatedStructs}
 
             ..${udfImplementations}
 
-            def apply(srcs: Sources, params: Parameters): com.rouesnel.typedsql.HiveQueryDataSource[Row] = {
+            def sql: String = ${Literal(Constant(sqlStatement))}
+
+            def query(...${queryParams}): com.rouesnel.typedsql.HiveQueryDataSource[Row] = {
              com.rouesnel.typedsql.HiveQueryDataSource[Row](
-               query,
-               ${readParametersAsMap("params", parameters.keys)},
-               ${readSourcesAsMap("srcs", sources.keys)},
-               ${createUdfMap()}
+               sql,
+               ${readParametersAsMap(parameters.keys)},
+               ${readSourcesAsMap(sources.keys)},
+               ${createUdfMap()},
+               this.partitions
               )
             }
           }"""

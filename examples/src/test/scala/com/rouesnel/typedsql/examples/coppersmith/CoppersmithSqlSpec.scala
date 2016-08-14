@@ -26,15 +26,12 @@ class CoppersmithSqlSpec extends TypedSqlSpec { def is = s2"""
     val payments        = createDataSource[Payment]()
 
 
-    val dataSource: DataSource[TypedSqlCoppersmithExample.Row] = TypedSqlCoppersmithExample(
-      TypedSqlCoppersmithExample.Sources(customers, orders, orderLineItems, payments),
-      TypedSqlCoppersmithExample.Parameters(18)
-    )
+    val dataSource: DataSource[TypedSqlCoppersmithExample.Row] =
+      TypedSqlCoppersmithExample.query(18)(customers, orders, orderLineItems, payments)
 
     val features: List[FeatureValue[Value]] =
       executeDataSource(dataSource)
         .flatMap(TypedSqlCoppersmithExample.Features.generate)
-
 
     println()
     println(features)

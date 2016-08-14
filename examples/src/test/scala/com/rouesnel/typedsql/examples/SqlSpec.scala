@@ -11,24 +11,25 @@ class SqlSpec extends TypedSqlSpec { def is = s2"""
     val people          = createDataSource(Person("Bob", "Brown", 28))
     val manualSqlStruct = createDataSource[ManualSqlStruct]()
 
-    val sqlDataSource: DataSource[SqlQueryExample.Row] = SqlQueryExample(
-      SqlQueryExample.Sources(people, manualSqlStruct, people),
-      SqlQueryExample.Parameters(18)
-    )
+    val sqlDataSource: DataSource[SqlQueryExample.Row] =
+      SqlQueryExample.query(18)(people, manualSqlStruct, people)
 
-    val chainedDataSource = ChainedExample(
-      ChainedExample.Sources(sqlDataSource),
-      ChainedExample.Parameters()
-    )
+    val chainedDataSource = ChainedExample.query(sqlDataSource)
 
-    val result        = executeDataSource(sqlDataSource)
-    val resultChained = executeDataSource(chainedDataSource)
+    val composed = (SqlQueryExample.query(18) _).tupled andThen (ChainedExample.query _)
+    val composedDataSource = composed(people, manualSqlStruct, people)
+
+    val result         = executeDataSource(sqlDataSource)
+    val resultChained  = executeDataSource(chainedDataSource)
+    val resultComposed = executeDataSource(composedDataSource)
 
     println()
     println(result)
     println()
 
     result must not(beEmpty)
+
+    resultChained must beEqualTo(resultComposed)
 
     val record = result.head
     record.intValue     must beEqualTo(1)

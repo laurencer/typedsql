@@ -13,11 +13,8 @@ class ParameterMapping(c: whitebox.Context) {
   type FieldName    = String
   type DefaultValue = String
 
-  def readParametersClass(objectBody: Seq[Trees#Tree]): Map[FieldName, DefaultValue] = {
-    objectBody.collect({
-      case q"case class Parameters(..${fields})" => fields
-    }).headOption
-      .fold(Map.empty[FieldName, DefaultValue])(_.map({
+  def readParameters(params: Seq[Trees#Tree]): Map[FieldName, DefaultValue] = {
+    params.collect({
         case q"$mods val ${name}: ${objectType}" => {
           val typeChecked = c.typecheck(objectType, c.TYPEmode)
           val tpe = Option(typeChecked.tpe).getOrElse(c.abort(c.enclosingPosition, "Could not determine type of " + objectType.toString()))
@@ -39,7 +36,6 @@ class ParameterMapping(c: whitebox.Context) {
 
           name.toString() -> defaultValue
         }
-        case other => c.abort(c.enclosingPosition, s"Fields of the case class must have type DataSource[T <: ThriftStruct]. Instead found $other")
-    }).toMap)
+    }).toMap
   }
 }

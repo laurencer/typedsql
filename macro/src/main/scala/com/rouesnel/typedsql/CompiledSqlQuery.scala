@@ -15,7 +15,7 @@ object CompiledSqlQuery {
 
 trait CompiledSqlQuery {
   /** The HiveQL - note this must be a string literal */
-  def query: String
+  def sql: String
 
   /** How to partition the output table (if at all) */
   def partitions: List[(String, String)] = Nil

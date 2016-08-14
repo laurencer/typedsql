@@ -9,18 +9,10 @@ By adding the `@SqlQuery` annotation to an object, TypedSQL will generate a [Par
 ```scala
 
 @SqlQuery object TransactionSummary {
-  case class Sources(
-    transactions: DataSource[Transaction],
-    accounts:     DataSource[ProductAccount],
-    customers:    DataSource[Customer]
-  )
-
-  case class Parameters(
-    transactionType: String,
-    year:            Int
-  )
-
-  def query =
+  def query(transactionType: String, year: Int)
+           (transactions: DataSource[Transaction],
+            accounts:     DataSource[ProductAccount],
+            customers:    DataSource[Customer]) =
     """
       SELECT c.id           as customer_id,
              MONTH(t.date)  as month,
@@ -36,7 +28,12 @@ By adding the `@SqlQuery` annotation to an object, TypedSQL will generate a [Par
 
 ```
 
-The `query` is checked for validity at compile time (e.g. if you have a syntax error or reference an invalid source/parameter then it will be caught by the Scala compiler).
+The `query` is checked for validity at compile time (e.g. if you have a syntax error or reference an invalid source/parameter then it will be caught by the Scala compiler) and replaced with a function that returns a usable `DataSource[Row]`.
+
+The parameters to the `query` method are either (*note - multiple parameter groups are supported and they are treated equally*):
+
+- Data Sources (any parameter of the type `DataSource[_]`): these represent the upstream tables used by the query.
+- Variables (all other parameters): these are variables that available in the body of the query.
 
 The macro also adds a new case class to `TransactionSummary` called `Row` which represents the output schema of the query and looks something like (nb. field names are converted to *Camel Case* for ease of use):
 
@@ -65,6 +62,20 @@ val transactionSummaries: TypedPipe[TransactionSummary.Row] = ParquetScroogeSour
 
 If the query is changed and a field is removed or its type is changed then it will be caught by the Scala compiler if its referenced downstream directly. This also works across multiple queries (e.g. if the `customerId` field is changed to a `String` then this will result in a compile-time error).
 
+## Using DataSources
+
+`DataSource[T]`s represent a query that can produce a dataset on HDFS (similar to Scalding's `TypedPipe[T]`s). There are two main ways to use a `DataSource[T]`:
+
+- `DataSource#toTypedPipe(config): Execution[TypedPipe[T]]`
+- `DataSource#toHiveTable(config): Execution[MaterialisedHiveTable[T]]`
+
+The `MaterialisedHiveTable` provides access to the name of the output Hive table (`hiveTable`) which can then be accessed through normal means.
+
+`DataSource[T]`s also have a few neat tricks:
+
+- They can automatically 
+
+
 ## Reusing Queries
 
 The `Row` class generated on the object is usable directly in Scalding flows or by other TypedSQL queries.
@@ -72,14 +83,8 @@ The `Row` class generated on the object is usable directly in Scalding flows or 
 ```scala
 
 @SqlQuery object WebClickTransactionAnalysis {
-  case class Sources(
-    webClicks:            DataSource[WebClick],
-    transactionSummaries: DataSource[TransactionSummary.Row]
-  )
-
-  case class Parameters()
-
-  def query =
+  def query(webClicks: DataSource[WebClick])
+           (transactionSummaries: DataSource[TransactionSummary.Row]) =
     """
       SELECT ts.id    as customer_id,
              ts.month as month,
@@ -91,6 +96,14 @@ The `Row` class generated on the object is usable directly in Scalding flows or 
 }
 ```
 
+Since the `query` method is a function it can be composed by regular means.
+
+```
+
+(TransactionSummary.query _).tupled andThen (WebClickTransactionAnalysis(wc) _)
+
+```
+
 ## UDFs (experimental)
 
 User-defined functions in Hive allow a query to execute a Java function as if it were built-in to
@@ -100,17 +113,11 @@ Scala functions inside the `@SqlQuery` object with the `@UDF` annotation.
 ```scala
 
 @SqlQuery object TransactionAnalysis {
-  case class Sources(
-    transactions: DataSource[Transaction],
-    accounts:     DataSource[ProductAccount]
-  )
-
-  case class Parameters()
-
   @UDF convertTransactionId(id: String): String = 
     "TRANS_" + id.split("\\.").last
 
-  def query =
+  def query(transactions: DataSource[Transaction],
+            accounts:     DataSource[ProductAccount]) =
     """
       SELECT c.id                       as customer_id,
              t.*,
@@ -136,7 +143,15 @@ These can then be run using:
 
 ```
 RUN_DIRECTORY=`pwd`
-hadoop jar typedsql-examples-assembly-0.1.0-SNAPSHOT.jar com.rouesnel.typedsql.examples.App --hdfs -libjars ${RUN_DIRECTORY}/datanucleus-api-jdo-3.2.6.jar,${RUN_DIRECTORY}/datanucleus-core-3.2.10.jar,${RUN_DIRECTORY}/datanucleus-rdbms-3.2.9.jar
+HADOOP_CLASSPATH=${HIVE_HOME}/conf:${HADOOP_CLASSPATH} hadoop jar typedsql-examples-assembly-0.1.0-SNAPSHOT.jar com.rouesnel.typedsql.examples.App --hdfs -libjars ${RUN_DIRECTORY}/datanucleus-api-jdo-3.2.6.jar,${RUN_DIRECTORY}/datanucleus-core-3.2.10.jar,${RUN_DIRECTORY}/datanucleus-rdbms-3.2.9.jar
+
+```
+
+Alternatively the examples can be run using Flash:
+
+```
+
+./sbt examples/hiveRun com.rouesnel.typedsql.examples.App --hdfs
 
 ```
 

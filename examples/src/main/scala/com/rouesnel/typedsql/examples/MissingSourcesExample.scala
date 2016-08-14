@@ -4,9 +4,7 @@ import com.rouesnel.typedsql.{DataSource, SqlQuery}
 
 @SqlQuery object MissingSourcesExample {
 
-  case class Parameters(value: Int)
-
-  def query =
+  def query(value: Int) =
     """
       SELECT ${value} as int_value
     """
