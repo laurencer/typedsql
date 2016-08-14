@@ -1,32 +1,39 @@
 package com.rouesnel.typedsql
 
 import java.text.SimpleDateFormat
-import java.util.{ArrayList, Date}
+import java.util.Date
 
-import au.com.cba.omnia.beeswax.Hive
-import au.com.cba.omnia.omnitool._
 import com.twitter.scalding.{Execution, TypedPipe}
-import com.twitter.scrooge.{ThriftStruct, ThriftStructCodec3}
+import com.twitter.scrooge.ThriftStruct
 import org.apache.hadoop.hive.conf.HiveConf
 import org.apache.hadoop.hive.ql.Driver
 import org.apache.hadoop.hive.ql.session.SessionState
-import au.com.cba.omnia.ebenezer.scrooge.ParquetScroogeSource
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry
-import org.apache.hadoop.hive.ql.parse.VariableSubstitution
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDF
+import org.apache.log4j.Logger
+import au.com.cba.omnia.beeswax.Hive
+import au.com.cba.omnia.ebenezer.scrooge.ParquetScroogeSource
+import au.com.cba.omnia.omnitool._
+import au.com.cba.omnia.permafrost.hdfs.Hdfs
+import org.apache.commons.logging.LogFactory
+import org.apache.hadoop.util.GenericOptionsParser
 
 import scala.util.Random
 import scala.util.control.NonFatal
 import scala.collection.convert.decorateAsJava._
-import scalaz.\/
+import scalaz._
+import Scalaz._
 
 object DataSource {
+
+  val log = LogFactory.getLog(getClass)
+
   case class Config(conf: HiveConf,
+                    args: Map[String, List[String]],
                     tableName: DataSource[_]  => String,
                     viewName:  DataSource[_]  => String,
-                    hdfsPath:  DataSource[_]  => String,
-                    namedSources: Map[DataSource[_], String] = Map.empty
+                    hdfsPath:  DataSource[_]  => String
                    ) {
 
   }
@@ -35,14 +42,129 @@ object DataSource {
   def timeFormat = new SimpleDateFormat("yyyyMMddHHmmss")
   def currentTime = timeFormat.format(new Date())
 
-  def defaultConfig(conf: HiveConf) =
+  def defaultConfig(conf: HiveConf, args: Map[String, List[String]]) =
     Config(
       conf,
+      args,
       src => s"typedsql_tmp.${currentTime}_${randomPositive}",
       src => s"typedsql_tmp.${currentTime}_${randomPositive}",
       src => s"/tmp/typedsql_tmp/${currentTime}"
     )
+
+  type Strategy[T <: ThriftStruct] = (DataSource.Config, PersistableSource[T]) => Execution[DataSource[T]]
+  object Strategy {
+    def alwaysRefresh[T <: ThriftStruct : Manifest](name: String, hiveTable: String, path: String): Strategy[T] = (config: Config, underlying: PersistableSource[T]) => {
+      val named = underlying match {
+        case hq: HiveQueryDataSource[_] => hq.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
+        case tp: TypedPipeDataSource[_] => tp.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
+      }
+
+      Execution.from {
+        val db :: tableName :: Nil = hiveTable.split("\\.").toList
+
+        val absolutePath = Hdfs.mkdirs(Hdfs.path(path))
+          .flatMap(_ => Hdfs.fileStatus(Hdfs.path(path)).map(_.getPath))
+          .run(config.conf)
+          .foldMessage[Path](identity _, err => throw new Exception(s"Error creating HDFS path ${path}: ${err}"))
+
+
+        val conflictingTableExists = Hive.existsTable(db, tableName).run(config.conf)
+          .fold[Boolean](identity _, err => throw new Exception(s"Failed when checking whether ${hiveTable} existed: ${err}"))
+
+        val alreadyExists = Hive.existsTableStrict[T](db, tableName, underlying.partitions, Some(absolutePath))
+          .run(config.conf)
+          .fold[Boolean](identity _, err => throw new Exception(s"Failed when checking whether ${hiveTable} matched the expected table: ${err}"))
+
+        if (conflictingTableExists && alreadyExists) {
+          log.info(s"DataSource ${name} already exists (${hiveTable} - ${path}). It is configured to always refresh. Deleting existing tables and materialising data source.")
+
+          Hive.withClient(_.dropTable(db, tableName))
+            .run(config.conf)
+            .fold[Unit](identity _, err => throw new Exception(s"Failed when deleting existing table ${hiveTable}: ${err}"))
+        } else {
+          log.info(s"DataSource ${name} does not exist (${hiveTable} - ${path}). Materialising data source (set to always refresh).")
+        }
+        named
+      }
+    }
+
+    def reuseExisting[T <: ThriftStruct : Manifest](name: String, hiveTable: String, path: String): Strategy[T] = (config: Config, underlying: PersistableSource[T]) => {
+      val named = underlying match {
+        case hq: HiveQueryDataSource[T] => hq.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
+        case tp: TypedPipeDataSource[T] => tp.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
+      }
+      Execution.from {
+        val db :: tableName :: Nil = hiveTable.split("\\.").toList
+
+        val absolutePath = Hdfs.mkdirs(Hdfs.path(path))
+          .flatMap(_ => Hdfs.fileStatus(Hdfs.path(path)).map(_.getPath))
+          .run(config.conf)
+          .foldMessage[Path](identity _, err => throw new Exception(s"Error creating HDFS path ${path}: ${err}"))
+
+        val conflictingTableExists = Hive.existsTable(db, tableName).run(config.conf)
+          .fold[Boolean](identity _, err => throw new Exception(s"Failed when checking whether ${hiveTable} existed: ${err}"))
+
+        val alreadyExists = Hive.existsTableStrict[T](db, tableName, underlying.partitions, Some(absolutePath))
+          .run(config.conf)
+          .fold[Boolean](identity _, err => throw new Exception(s"Failed when checking whether ${hiveTable} matched the expected table: ${err}"))
+
+        if (alreadyExists && conflictingTableExists) {
+          log.info(s"DataSource ${name} already exists (${hiveTable} - ${path}) - reusing existing data.")
+          MaterialisedHiveTable[T](path, hiveTable)
+        } else if (conflictingTableExists) {
+          log.info(s"A conflicting table for DataSource ${name} already exists (${hiveTable} - ${path}). Dropping existing data and rematerialising.")
+          Hive.withClient(_.dropTable(db, tableName))
+            .run(config.conf)
+            .fold[Unit](identity _, err => throw new Exception(s"Failed when deleting existing table ${hiveTable}: ${err}"))
+
+          named
+        } else {
+          log.info(s"DataSource ${name} does not exist (${hiveTable} - ${path}). Materialising data source.")
+          named
+        }
+      }
+    }
+    def flaggedReuse[T <: ThriftStruct : Manifest](name: String, hiveTable: String, path: String): Strategy[T] = (config: Config, underlying: PersistableSource[T]) => {
+      val named = underlying match {
+        case hq: HiveQueryDataSource[_] => hq.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
+        case tp: TypedPipeDataSource[_] => tp.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
+      }
+
+      Execution.from {
+        val db :: tableName :: Nil = hiveTable.split("\\.").toList
+
+        val absolutePath = Hdfs.mkdirs(Hdfs.path(path))
+          .flatMap(_ => Hdfs.fileStatus(Hdfs.path(path)).map(_.getPath))
+          .run(config.conf)
+          .foldMessage[Path](identity _, err => throw new Exception(s"Error creating HDFS path ${path}: ${err}"))
+
+        val conflictingTableExists = Hive.existsTable(db, tableName).run(config.conf)
+          .fold[Boolean](identity _, err => throw new Exception(s"Failed when checking whether ${hiveTable} existed: ${err}"))
+
+        val alreadyExists = Hive.existsTableStrict[T](db, tableName, underlying.partitions, Some(absolutePath))
+          .run(config.conf)
+          .fold[Boolean](identity _, err => throw new Exception(s"Failed when checking whether ${hiveTable} matched the expected table: ${err}"))
+
+        if (alreadyExists && config.args.contains(s"reuse-${name}")) {
+          log.info(s"DataSource ${name} already exists (${hiveTable} - ${path}) - reusing existing data.")
+          MaterialisedHiveTable[T](path, hiveTable)
+        } else {
+          if (conflictingTableExists) {
+            log.info(s"DataSource ${name} already exists (${hiveTable} - ${path}) even though --reuse-${name} flag is not set. Deleting existing tables and materialising data source.")
+
+            Hive.withClient(_.dropTable(db, tableName))
+              .run(config.conf)
+              .fold[Unit](identity _, err => throw new Exception(s"Failed when deleting existing table ${hiveTable}: ${err}"))
+          } else {
+            log.info(s"DataSource ${name} does not exist (${hiveTable} - ${path}) even though --reuse-${name} flag is set. Materialising data source.")
+          }
+          named
+        }
+      }
+    }
+  }
 }
+
 
 /**
  * A Data Source is something that can be queried to produce a dataset on HDFS either as a
@@ -56,17 +178,33 @@ sealed abstract class DataSource[T <: ThriftStruct] {
 /**
  * A source that can be represented/used as a Hive view (e.g. does not require materialisation).
  */
-trait HiveViewSource[T <: ThriftStruct] {
+sealed trait HiveViewSource[T <: ThriftStruct] {
   def toHiveView(config: DataSource.Config): Execution[HiveView[T]]
 }
 
-  /**
+sealed trait PersistableSource[T <: ThriftStruct] {
+  this: DataSource[T] =>
+
+  def manifest: Manifest[T]
+
+  def partitions: List[(String, String)]
+
+  def persist(strategy: DataSource.Strategy[T]): PersistedDataSource[T] = {
+    implicit val m = manifest
+    PersistedDataSource(this, strategy)
+  }
+}
+
+/**
  * A Hive table that has been persisted/already exists on HDFS.
-   *
-   * @param hdfsPath path to dataset on HDFS
+ *
+ * @param hdfsPath path to dataset on HDFS
  * @param hiveTable fully qualified name (e.g. `db.tablename`)
  */
-case class MaterialisedHiveTable[T <: ThriftStruct : Manifest](hdfsPath: String, hiveTable: String) extends DataSource[T] {
+case class MaterialisedHiveTable[T <: ThriftStruct : Manifest](hdfsPath: String,
+                                                               hiveTable: String,
+                                                               partitions: List[(String, String)] = Nil
+                                                              ) extends DataSource[T] {
   def toTypedPipe(config: DataSource.Config): Execution[TypedPipe[T]] =
     Execution.from({
       val db :: table :: Nil = hiveTable.split("\\.").toList
@@ -99,23 +237,29 @@ case class HiveView[T <: ThriftStruct : Manifest](hiveTable: String) extends Dat
 /**
  * Generic Scalding Typed Pipe source. Will be persisted to disk on first use as a Hive table.
  */
-case class TypedPipeDataSource[T <: ThriftStruct : Manifest](pipe: TypedPipe[T]) extends DataSource[T] {
-  def toTypedPipe(config: DataSource.Config): Execution[TypedPipe[T]] =
-    Execution.from { pipe }
+case class TypedPipeDataSource[T <: ThriftStruct : Manifest](pipe: TypedPipe[T],
+                                                             partitions: List[(String, String)] = Nil,
+                                                             hiveTableName: Option[String] = None,
+                                                             hdfsPath: Option[String] = None
+                                                            ) extends DataSource[T] with PersistableSource[T] {
+  def manifest: Manifest[T] = implicitly[Manifest[T]]
 
-  def toHiveTable(config: DataSource.Config): Execution[MaterialisedHiveTable[T]] = {
-    val path  = config.hdfsPath(this)
-    val tableName = config.tableName(this)
-    val db :: table :: Nil = tableName.split("\\.").toList
-    pipe.writeExecution(ParquetScroogeSource[T](path)).flatMap(_ => Execution.from {
-      DataSource.synchronized {
-        Hive.createParquetTable[T](db, table, Nil, Some(new Path(path))).run(config.conf) match {
-          case Ok(_)        => MaterialisedHiveTable(path, tableName)
-          case Error(these) => throw new Exception(s"Error creating Hive table: ${these}")
+  def toTypedPipe(config: DataSource.Config): Execution[TypedPipe[T]] =
+      Execution.from { pipe }
+
+    def toHiveTable(config: DataSource.Config): Execution[MaterialisedHiveTable[T]] = {
+      val path  = hdfsPath.getOrElse(config.hdfsPath(this))
+      val tableName = hiveTableName.getOrElse(config.tableName(this))
+      val db :: table :: Nil = tableName.split("\\.").toList
+      pipe.writeExecution(ParquetScroogeSource[T](path)).flatMap(_ => Execution.from {
+        DataSource.synchronized {
+          Hive.createParquetTable[T](db, table, Nil, Some(new Path(path))).run(config.conf) match {
+            case Ok(_)        => MaterialisedHiveTable(path, tableName)
+            case Error(these) => throw new Exception(s"Error creating Hive table: ${these}")
+          }
         }
-      }
-    })
-  }
+      })
+    }
 }
 
 /**
@@ -125,8 +269,14 @@ case class HiveQueryDataSource[T <: ThriftStruct : Manifest](
                                query: String,
                                parameters: Map[String, String],
                                sources: Map[String, DataSource[_]],
-                               udfs: Map[String, Class[GenericUDF]]
-                              ) extends DataSource[T] {
+                               udfs: Map[String, Class[GenericUDF]],
+                               partitions: List[(String, String)] = Nil,
+                               hiveViewName: Option[String] = None,
+                               hiveTableName: Option[String] = None,
+                               hdfsPath: Option[String] = None
+                              ) extends DataSource[T] with PersistableSource[T] {
+
+  def manifest: Manifest[T] = implicitly[Manifest[T]]
 
   def toHiveView(config: DataSource.Config): Execution[HiveView[T]] =
     Execution.sequence(sources.toList.map({
@@ -139,11 +289,17 @@ case class HiveQueryDataSource[T <: ThriftStruct : Manifest](
       SessionState.get().setIsSilent(true)
       val driver = new Driver(config.conf)
 
-      val viewName      = config.viewName(this)
+      val viewName      = hiveViewName.getOrElse(config.viewName(this))
       val databaseName  = viewName.split("\\.").headOption
-      val hdfsPath      = config.hdfsPath(this)
 
       SessionState.get().setHiveVariables((parameters ++ evaluatedSources).asJava)
+
+      Option(GenericOptionsParser.getLibJars(config.conf))
+        .map(_.toList)
+        .getOrElse(Nil)
+        .foreach(url => {
+          SessionState.registerJar(url.getPath)
+        })
 
       try {
         driver.init()
@@ -187,11 +343,19 @@ case class HiveQueryDataSource[T <: ThriftStruct : Manifest](
       SessionState.get().setIsSilent(true)
       val driver = new Driver(config.conf)
 
-      val tableName    = config.tableName(this)
-      val databaseName = tableName.split("\\.").headOption
-      val hdfsPath     = config.hdfsPath(this)
+      val tableName     = hiveTableName.getOrElse(config.tableName(this))
+      val databaseName  = tableName.split("\\.").headOption
+      val justTableName = tableName.split("\\.").lastOption.getOrElse(tableName)
+      val path          = hdfsPath.getOrElse(config.hdfsPath(this))
 
       SessionState.get().setHiveVariables((parameters ++ evaluatedSources).asJava)
+
+      Option(GenericOptionsParser.getLibJars(config.conf))
+        .map(_.toList)
+        .getOrElse(Nil)
+        .foreach(url => {
+          SessionState.registerJar(url.getPath)
+        })
 
       try {
         driver.init()
@@ -203,18 +367,35 @@ case class HiveQueryDataSource[T <: ThriftStruct : Manifest](
 
         udfs.toList.map({ case (name, clazz) => FunctionRegistry.registerTemporaryGenericUDF(name, clazz) })
 
+        val absolutePath = Hdfs.mkdirs(Hdfs.path(path))
+          .flatMap(_ => Hdfs.fileStatus(Hdfs.path(path)).map(_.getPath))
+          .run(config.conf)
+          .foldMessage[Path](identity _, err => throw new Exception(s"Error creating HDFS path ${path}: ${err}"))
+
+        // Table must be created as managed so we can use CTAS (create table as select). After
+        // executing we change it to an external table.
         val createQuery =
           s"""
              |CREATE TABLE ${tableName}
              |        STORED AS PARQUET
-             |        LOCATION '${hdfsPath}'
+             |        LOCATION '${absolutePath}'
              |        AS ${query}
           """.stripMargin
         val response = driver.run(createQuery)
         if (response.getResponseCode() != 0)
           throw new Exception(s"Error running query '$query'. ${response.getErrorMessage}")
         else {
-          MaterialisedHiveTable[T](hdfsPath, tableName)
+          // Convert from a managed table to an external table.
+          databaseName.foreach(db => {
+            driver.run(s"USE ${db}")
+            if (response.getResponseCode() != 0)
+              throw new Exception(s"Error selecting database ${db}. ${response.getErrorMessage}")
+          })
+          driver.run(s"ALTER TABLE ${justTableName} SET TBLPROPERTIES('EXTERNAL'='TRUE')")
+          if (response.getResponseCode() != 0)
+            throw new Exception(s"Error converting table ${tableName} from managed to external. ${response.getErrorMessage}")
+
+          MaterialisedHiveTable[T](path, tableName)
         }
       } catch {
         case NonFatal(ex) => throw new Exception(s"Error trying to run query '$query'", ex)
@@ -234,8 +415,8 @@ case class HiveQueryDataSource[T <: ThriftStruct : Manifest](
  * A Data Source that wraps an underlying implementation and applies a strategy to decide whether
  * to execute the underlying data source or to use a cache/stale data.
  */
-case class PersistedDataSource[T <: ThriftStruct : Manifest](underlying: DataSource[T],
-                                                             strategy: (DataSource.Config, DataSource[T]) => Execution[DataSource[T]]
+case class PersistedDataSource[T <: ThriftStruct : Manifest](underlying: PersistableSource[T],
+                                                             strategy: DataSource.Strategy[T]
                                                          ) extends DataSource[T] {
   def toTypedPipe(config: DataSource.Config): Execution[TypedPipe[T]] =
     strategy(config, underlying).flatMap(_.toTypedPipe(config))

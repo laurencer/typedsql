@@ -160,7 +160,7 @@ object SqlQuery {
 
             ..${udfImplementations}
 
-            def apply(srcs: Sources, params: Parameters): com.rouesnel.typedsql.DataSource[Row] = {
+            def apply(srcs: Sources, params: Parameters): com.rouesnel.typedsql.HiveQueryDataSource[Row] = {
              com.rouesnel.typedsql.HiveQueryDataSource[Row](
                query,
                ${readParametersAsMap("params", parameters.keys)},

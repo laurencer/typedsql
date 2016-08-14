@@ -5,6 +5,8 @@ import java.util.Date
 import com.twitter.scalding._
 import au.com.cba.omnia.beeswax.Hive
 import com.rouesnel.typedsql.{DataSource, SqlQuery, UDF}
+import DataSource.Strategy._
+import org.apache.commons.configuration.Configuration
 import org.apache.hadoop.hive.conf.HiveConf
 
 import scala.util.Random
@@ -41,23 +43,22 @@ import scala.util.Random
 
 object App extends ExecutionApp {
 
-  def randomPositive = math.abs(Random.nextLong())
 
-  def job = Execution.getConfigMode.flatMap({ case (config, Hdfs(_, conf)) => {
+  def job = Execution.getConfigMode.flatMap({ case (appConfig, Hdfs(_, conf)) => {
     val step1: DataSource[Step1.Row] = Step1(
       Step1.Sources(),
       Step1.Parameters()
-    )
+    ).persist(reuseExisting("step1", "example.step1", "examples/step1"))
 
     val step2: DataSource[Step2.Row] = Step2(
       Step2.Sources(step1),
       Step2.Parameters()
-    )
+    ).persist(flaggedReuse("step2", "example.step2", "examples/step2"))
 
     def config = DataSource.defaultConfig(
-      new HiveConf()
+      conf = new HiveConf(conf, classOf[Configuration]),
+      args = appConfig.getArgs.m
     )
-
 
     step2.toHiveTable(config).onComplete(tried => {
       println(tried)

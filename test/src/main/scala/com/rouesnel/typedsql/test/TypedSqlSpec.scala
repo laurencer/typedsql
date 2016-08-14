@@ -30,6 +30,7 @@ abstract class TypedSqlSpec extends ThermometerHiveSpec with ParquetLogging {
   /** Configuration used to the test */
   def testConfig = Config(
     hiveConf,
+    Map.empty,
     _ => s"typedsql_tmp_${randomPositive}" + "." + new Date().getTime + "_" + randomPositive,
     _ => s"typedsql_tmp_${randomPositive}" + "." + new Date().getTime + "_" + randomPositive,
     _ => s"${testDir.resolve("tmp")}/typedsql_tmp/${new Date().getTime}_${randomPositive}"
