@@ -40,6 +40,7 @@ import scala.util.Random
 }
 
 object App extends ExecutionApp {
+
   def randomPositive = math.abs(Random.nextLong())
 
   def job = Execution.getConfigMode.flatMap({ case (config, Hdfs(_, conf)) => {
@@ -53,11 +54,8 @@ object App extends ExecutionApp {
       Step2.Parameters()
     )
 
-    def config = DataSource.Config(
-      new HiveConf(),
-      _ => s"typedsql_tmp_${randomPositive}" + "." + new Date().getTime + "_" + randomPositive,
-      _ => s"typedsql_tmp_${randomPositive}" + "." + new Date().getTime + "_" + randomPositive,
-      _ => s"/tmp/typedsql_tmp/${new Date().getTime}_${randomPositive}"
+    def config = DataSource.defaultConfig(
+      new HiveConf()
     )
 
 

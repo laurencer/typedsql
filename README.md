@@ -91,6 +91,40 @@ The `Row` class generated on the object is usable directly in Scalding flows or 
 }
 ```
 
+## UDFs (experimental)
+
+User-defined functions in Hive allow a query to execute a Java function as if it were built-in to
+SQL/Hive. TypedSQL provides an easy way to create and use UDFs in your HiveQL by annotating regular
+Scala functions inside the `@SqlQuery` object with the `@UDF` annotation.
+
+```scala
+
+@SqlQuery object TransactionAnalysis {
+  case class Sources(
+    transactions: DataSource[Transaction],
+    accounts:     DataSource[ProductAccount]
+  )
+
+  case class Parameters()
+
+  @UDF convertTransactionId(id: String): String = 
+    "TRANS_" + id.split("\\.").last
+
+  def query =
+    """
+      SELECT c.id                       as customer_id,
+             t.*,
+             convertTransactionId(t.id) as normalized_id
+      FROM ${transactions} t
+        INNER JOIN ${accounts} a ON t.account_id = a.id
+    """
+}
+
+```
+
+The `@UDF` macro will generate a `GenericUDF` implementation for the Scala function behind the 
+scenes and automatically register the function when executing the queries.
+
 ## Examples
 
 A number of examples are included in the `examples` sub-project (these are also used as test cases). 
