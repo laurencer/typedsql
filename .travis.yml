@@ -12,4 +12,6 @@ before_install:
   local.credentials.sbt -d
 after_success:
 - '[ "$TRAVIS_BRANCH" = "master" -a "$TRAVIS_PULL_REQUEST" = "false" ] && /bin/bash
-  sbt "publishSigned sonatypeRelease"'
+  sbt "publishSigned"'
+- '[ "$TRAVIS_BRANCH" = "master" -a "$TRAVIS_PULL_REQUEST" = "false" ] && /bin/bash
+    sbt "sonatypeRelease"'

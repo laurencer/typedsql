@@ -103,6 +103,7 @@ object build extends Build {
         ++ Seq(
           conflictManager := ConflictManager.default,
           parallelExecution in Test := false,
+          publishArtifact := false,
           sbt.Keys.test in assembly := {},
           // fork in Test := true,
           // fork in Compile := true,
