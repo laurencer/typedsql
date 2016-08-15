@@ -274,7 +274,7 @@ case class HiveQueryDataSource[T <: ThriftStruct : Manifest](
                                hiveViewName: Option[String] = None,
                                hiveTableName: Option[String] = None,
                                hdfsPath: Option[String] = None
-                              ) extends DataSource[T] with PersistableSource[T] {
+                              ) extends DataSource[T] with HiveViewSource[T] with PersistableSource[T] {
 
   def manifest: Manifest[T] = implicitly[Manifest[T]]
 
