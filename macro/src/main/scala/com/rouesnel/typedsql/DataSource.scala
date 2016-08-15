@@ -67,15 +67,10 @@ object DataSource {
           .run(config.conf)
           .foldMessage[Path](identity _, err => throw new Exception(s"Error creating HDFS path ${path}: ${err}"))
 
-
-        val conflictingTableExists = Hive.existsTable(db, tableName).run(config.conf)
+        val alreadyExists = Hive.existsTable(db, tableName).run(config.conf)
           .fold[Boolean](identity _, err => throw new Exception(s"Failed when checking whether ${hiveTable} existed: ${err}"))
 
-        val alreadyExists = Hive.existsTableStrict[T](db, tableName, underlying.partitions, Some(absolutePath))
-          .run(config.conf)
-          .fold[Boolean](identity _, err => throw new Exception(s"Failed when checking whether ${hiveTable} matched the expected table: ${err}"))
-
-        if (conflictingTableExists && alreadyExists) {
+        if (alreadyExists) {
           log.info(s"DataSource ${name} already exists (${hiveTable} - ${path}). It is configured to always refresh. Deleting existing tables and materialising data source.")
 
           Hive.withClient(_.dropTable(db, tableName))
