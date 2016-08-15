@@ -124,6 +124,40 @@ object DataSource {
         }
       }
     }
+
+    def forceReuseExisting[T <: ThriftStruct : Manifest](name: String, hiveTable: String, path: String): Strategy[T] = (config: Config, underlying: PersistableSource[T]) => {
+      val named = underlying match {
+        case hq: HiveQueryDataSource[T] => hq.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
+        case tp: TypedPipeDataSource[T] => tp.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
+      }
+      Execution.from {
+        val db :: tableName :: Nil = hiveTable.split("\\.").toList
+
+        val absolutePath = Hdfs.mkdirs(Hdfs.path(path))
+          .flatMap(_ => Hdfs.fileStatus(Hdfs.path(path)).map(_.getPath))
+          .run(config.conf)
+          .foldMessage[Path](identity _, err => throw new Exception(s"Error creating HDFS path ${path}: ${err}"))
+
+        val conflictingTableExists = Hive.existsTable(db, tableName).run(config.conf)
+          .fold[Boolean](identity _, err => throw new Exception(s"Failed when checking whether ${hiveTable} existed: ${err}"))
+
+        val alreadyExists = Hive.existsTableStrict[T](db, tableName, underlying.partitions, Some(absolutePath))
+          .run(config.conf)
+          .fold[Boolean](identity _, err => throw new Exception(s"Failed when checking whether ${hiveTable} matched the expected table: ${err}"))
+
+        if (alreadyExists && conflictingTableExists) {
+          log.info(s"DataSource ${name} already exists (${hiveTable} - ${path}) - reusing existing data.")
+          MaterialisedHiveTable[T](path, hiveTable)
+        } else if (conflictingTableExists) {
+          log.warn(s"A conflicting table for DataSource ${name} already exists (${hiveTable} - ${path}). Forcing reuse of existing table (may break!).")
+          MaterialisedHiveTable[T](path, hiveTable)
+        } else {
+          log.info(s"DataSource ${name} does not exist (${hiveTable} - ${path}). Materialising data source.")
+          named
+        }
+      }
+    }
+
     def flaggedReuse[T <: ThriftStruct : Manifest](name: String, hiveTable: String, path: String): Strategy[T] = (config: Config, underlying: PersistableSource[T]) => {
       val named = underlying match {
         case hq: HiveQueryDataSource[_] => hq.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
