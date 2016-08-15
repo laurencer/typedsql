@@ -1,7 +1,20 @@
-/_site/
+*.class
+*.log
+
+# sbt specific
+.cache
+.history
+.lib/
+dist/*
+target/
+lib_managed/
+src_managed/
+project/boot/
+project/plugins/project/
+
 .idea/
-target
-idea/
-ideaRunner/
+.idea_modules/
+
+local.*
 
 **/flash.sbt

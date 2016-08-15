@@ -1,0 +1,19 @@
+language: scala
+jdk: oraclejdk7
+sudo: false
+script:
+- sbt "test"
+env:
+  global:
+  - secure: XnKH8oNSZBtsBdoW19gaFSYtTJz8z+B3B0Ul+JwLbGGUUqHUxmn69flwey8t7sH0dzN7y+Mwd9SYf/QpyHB0hoYrkmd+f08rlxKyUwuTOdchJRnHSgUQTEyMlE2Z6oLCGil6duCbavjhn0HWP1Fn0wpklWv58lryOziUe7vUlHQczK9BBOIGOsQIUY6H3fin6zQ1Tgic1OH/hkETC3dSEtUPNde25QuKxvg5u69gYsJ54iQjLf5WK3J+7W8uFibG7YVmBPBiMNEDJ/I3Oqntx64+DIBO6K6jdPOl11z0xdIqM+6Uj3zAV01UIU1OkCNPYN3tmryd9P1xBcY5oup1oRuyKR6zdCpKCxMT5or/kFDsA0gwIW2o6QXkWNu/lPxIUCz3OPBdDWo4ryCUVcDQzc5+CGqbWuYEeoDxuCp7WWDnmS2HfmH4Ba9Ta6mIm0iqJrgXlvsX8D78OKZcZu0TI8THza7t0Fs+bOc/kpMMai8wsZMhC45luEFV4Lz3N1g7/UweQijtbop/EsvWX/pgOge/7S39zKJlIBypcbLvI4cH0mNqGoYdsvQ35SUPL8D+LlXaoxA8obdXUZW5c1Mrv6ruKi1IYBMBo1U+rHotiK7KRWgUlkHXx0Z+kik61iDXgGZEmcD2DChYcnoPSZOQjgwSNaaxxI9SN2W2GHVlbCM=
+  - secure: cSmA5drasX4lWuzYReQaz9mZwu9s1tzLzg0dd5MGiONV8UF3RlJi8RvxeqxgobtCPAAhPjFf7kgIQLSCrLIE6GjIGk0lTa/2mY4HNI0N/1PJDFUKGIStZX3NUR6i46X2XyyEnS2148M49wf1m2L6AuJ0nSvVOsW579RpVhcH5pC7o44SfIvqO+kbv9TN83pBsEf7ApTrTyVWmIs6hthc/IJWf2IBPt9C1Tbz9daQmZFGbkEgIu6tz3dEEOL/dCMZuO6HUfYiA9HUcLQ/orBQE/8cOkv3LMof0usWB6zdITssDWBU21CeqEKZiELglRiJOQ1Dq5JSR3kN7kRKePEv2c7y6E1bq/XFgNknf0G+6yFTmUOFIsNxIiJFPKuqvQmvAbCJoALc6u7Hflu/X3QA4Uq03uQx/0e9OvFrZZUt4BXN/knC/lJXfYiHjCzFlBw7LBByCLQe4CMt1Hsx2vFxL+lZNNJe7EXVx3hXi66UDMKwqHrLqiNxYXQpTcYz5mXAWJJBmkYVOjYMOUjmIFDy+eDjuJvaXIm4ox9wK/qNx+bKyzf6qPsmnpJgLMHa1U0LHaknOsfnjlUTbIAdcQ2wzHlUm+uffpO5NoKxBkhiT225ZVdF3npkHUdBFvggqG++zLHLNhsyrgDDtMVSavE0X3lYNI1GMhyvQnIDnfUaXow=
+before_install:
+- openssl aes-256-cbc -pass pass:$ENCRYPTION_PASSWORD -in secring.gpg.enc -out local.secring.gpg
+  -d
+- openssl aes-256-cbc -pass pass:$ENCRYPTION_PASSWORD -in pubring.gpg.enc -out local.pubring.gpg
+  -d
+- openssl aes-256-cbc -pass pass:$ENCRYPTION_PASSWORD -in credentials.sbt.enc -out
+  local.credentials.sbt -d
+after_success:
+- '[ "$TRAVIS_BRANCH" = "master" -a "$TRAVIS_PULL_REQUEST" = "false" ] && /bin/bash
+  sbt "publishSigned sonatypeRelease"'

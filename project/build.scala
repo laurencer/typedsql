@@ -11,6 +11,7 @@ import sbtassembly.AssemblyKeys.{assembly => _, assemblyExcludedJars => _, _}
 import sbtassembly.AssemblyPlugin.autoImport._
 
 object build extends Build {
+  lazy val coppersmithVersion = "0.21.3-20160724231815-2c523f2"
 
   lazy val standardSettings =
     Defaults.coreDefaultSettings ++
@@ -21,9 +22,7 @@ object build extends Build {
     )
 
   lazy val publishSettings =
-    Seq(
-      organization := "com.rouesnel"
-    )
+    Seq(organization := "com.rouesnel")
 
   lazy val macroBuildSettings = Seq(
     libraryDependencies <+= (scalaVersion)("org.scala-lang" % "scala-reflect" % _),
@@ -44,7 +43,8 @@ object build extends Build {
         ++ uniform.project("typedsql-all", "com.rouesnel.typedsql.all")
         ++ publishSettings
         ++ Seq(
-        publishArtifact := false
+          publishArtifact := false,
+          crossScalaVersions := Seq("2.11.8")
       )
     , aggregate = Seq(core, macros, test, examples)
   )
@@ -89,10 +89,6 @@ object build extends Build {
           )
       )
   ) dependsOn(core)
-
-  lazy val coppersmithVersion = "0.21.3-20160724231815-2c523f2"
-
-
 
   lazy val examples = Project(
     id = "examples"
