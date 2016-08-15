@@ -3,3 +3,5 @@
 target
 idea/
 ideaRunner/
+
+**/flash.sbt

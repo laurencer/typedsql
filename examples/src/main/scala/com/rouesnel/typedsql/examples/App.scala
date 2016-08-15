@@ -38,21 +38,6 @@ object App extends ExecutionApp {
 
   def job = Execution.getConfigMode.flatMap({ case (appConfig, Hdfs(_, conf)) => {
 
-    /*
-    val customers: DataSource[Customer] = TypedPipeDataSource(
-      TypedPipe.from(IterableSource(
-        Customer(123, "Bob",   "Brown", date, "bb@email.com", Some("MALE"), 32)
-      , Customer(124, "Diana", "Brown", date, "db@email.com", Some("FEMALE"), 31)
-      , Customer(125, "Aaron", "Brown", date, "ab@email.com", Some("FEMALE"), 14)
-      ))
-    )
-
-    val orders: DataSource[Order] = TypedPipeDataSource(
-      TypedPipe.from(IterableSource(
-        Order("O_000098", 123, date, None, None, None)
-      ))
-    )*/
-
     val step1: DataSource[Step1.Row] =
       Step1.query.persist(reuseExisting("step1", "example.step1", "examples/step1"))
 
