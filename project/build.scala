@@ -46,7 +46,7 @@ object build extends Build {
           publishArtifact := false,
           crossScalaVersions := Seq("2.11.8")
       )
-    , aggregate = Seq(core, macros, test, examples)
+    , aggregate = Seq(core, coreMacros, macros, test, examples)
   )
 
   lazy val core: Project = Project(
@@ -62,6 +62,33 @@ object build extends Build {
         )
       )
   )
+
+  lazy val coreMacros: Project = Project(
+    id = "core-macros"
+    , base = file("core-macros")
+    , settings =
+      standardSettings
+        ++ uniform.project("typedsql-core-macros", "com.rouesnel.typedsql")
+        ++ uniformThriftSettings
+        ++ macroBuildSettings
+        ++ publishSettings
+        ++ Seq(
+        libraryDependencies ++=
+          depend.hadoopClasspath ++
+            depend.omnia("ebenezer", "0.22.2-20160619063420-4eb964f") ++
+            depend.omnia("permafrost", "0.13.0-20160718235343-68e0f07") ++
+            depend.parquet() ++
+            depend.testing() ++
+            depend.logging() ++
+            depend.hadoop() ++
+            depend.hive() ++
+            Seq(
+              "au.com.cba.omnia"        %% "thermometer-hive" % "1.4.2-20160414053315-99c196d",
+              "ch.qos.logback"           % "logback-classic"  % "1.0.13",
+              "io.argonaut"             %% "argonaut"         % "6.1"
+            )
+      )
+  ) dependsOn(core)
 
   lazy val macros: Project = Project(
     id = "macro"
@@ -88,7 +115,7 @@ object build extends Build {
             "io.argonaut"             %% "argonaut"         % "6.1"
           )
       )
-  ) dependsOn(core)
+  ) dependsOn(core, coreMacros)
 
   lazy val examples = Project(
     id = "examples"

@@ -276,19 +276,26 @@ case class TypedPipeDataSource[T <: ThriftStruct : Manifest](pipe: TypedPipe[T],
   def toTypedPipe(config: DataSource.Config): Execution[TypedPipe[T]] =
       Execution.from { pipe }
 
-    def toHiveTable(config: DataSource.Config): Execution[MaterialisedHiveTable[T]] = {
-      val path  = hdfsPath.getOrElse(config.hdfsPath(this))
-      val tableName = hiveTableName.getOrElse(config.tableName(this))
-      val db :: table :: Nil = tableName.split("\\.").toList
-      pipe.writeExecution(ParquetScroogeSource[T](path)).flatMap(_ => Execution.from {
-        DataSource.synchronized {
-          Hive.createParquetTable[T](db, table, Nil, Some(new Path(path))).run(config.conf) match {
-            case Ok(_)        => MaterialisedHiveTable(path, tableName)
-            case Error(these) => throw new Exception(s"Error creating Hive table: ${these}")
-          }
+  def toHiveTable(config: DataSource.Config): Execution[MaterialisedHiveTable[T]] = {
+    val path  = hdfsPath.getOrElse(config.hdfsPath(this))
+    val tableName = hiveTableName.getOrElse(config.tableName(this))
+    val db :: table :: Nil = tableName.split("\\.").toList
+    pipe.writeExecution(ParquetScroogeSource[T](path)).flatMap(_ => Execution.from {
+      DataSource.synchronized {
+        HiveMetadataTable.createTable[T](db, table, Nil, Some(new Path(path))).run(config.conf) match {
+          case Ok(_)        => MaterialisedHiveTable(path, tableName)
+          case Error(these) => these.fold(
+            msg   => throw new Exception(s"Error creating Hive table: ${msg}"),
+            ex    => throw new Exception(s"Error creating Hive table", ex),
+            { case (msg, ex) => throw new Exception(s"Error creating Hive table: $msg", ex) }
+          )
         }
-      })
-    }
+      }
+    })
+  }
+
+
+
 }
 
 /**
@@ -407,6 +414,7 @@ case class HiveQueryDataSource[T <: ThriftStruct : Manifest](
           s"""
              |CREATE TABLE ${tableName}
              |        STORED AS PARQUET
+             |        TBLPROPERTIES ('PARQUET.COMPRESS'='SNAPPY')
              |        LOCATION '${absolutePath}'
              |        AS ${query}
           """.stripMargin
