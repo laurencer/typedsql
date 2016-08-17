@@ -16,6 +16,7 @@ import au.com.cba.omnia.beeswax.Hive
 import au.com.cba.omnia.ebenezer.scrooge.ParquetScroogeSource
 import au.com.cba.omnia.omnitool._
 import au.com.cba.omnia.permafrost.hdfs.Hdfs
+import com.rouesnel.typedsql.core.StructType
 import org.apache.commons.logging.LogFactory
 import org.apache.hadoop.util.GenericOptionsParser
 
@@ -266,7 +267,8 @@ case class HiveView[T <: ThriftStruct : Manifest](hiveTable: String) extends Dat
 /**
  * Generic Scalding Typed Pipe source. Will be persisted to disk on first use as a Hive table.
  */
-case class TypedPipeDataSource[T <: ThriftStruct : Manifest](pipe: TypedPipe[T],
+case class TypedPipeDataSource[T <: ThriftStruct : Manifest](structType: StructType,
+                                                             pipe: TypedPipe[T],
                                                              partitions: List[(String, String)] = Nil,
                                                              hiveTableName: Option[String] = None,
                                                              hdfsPath: Option[String] = None
@@ -282,7 +284,7 @@ case class TypedPipeDataSource[T <: ThriftStruct : Manifest](pipe: TypedPipe[T],
     val db :: table :: Nil = tableName.split("\\.").toList
     pipe.writeExecution(ParquetScroogeSource[T](path)).flatMap(_ => Execution.from {
       DataSource.synchronized {
-        HiveMetadataTable.createTable[T](db, table, Nil, Some(new Path(path))).run(config.conf) match {
+        HiveMetadataTable.createTable[T](structType, db, table, Nil, Some(new Path(path))).run(config.conf) match {
           case Ok(_)        => MaterialisedHiveTable(path, tableName)
           case Error(these) => these.fold(
             msg   => throw new Exception(s"Error creating Hive table: ${msg}"),
@@ -414,8 +416,8 @@ case class HiveQueryDataSource[T <: ThriftStruct : Manifest](
           s"""
              |CREATE TABLE ${tableName}
              |        STORED AS PARQUET
-             |        TBLPROPERTIES ('PARQUET.COMPRESS'='SNAPPY')
              |        LOCATION '${absolutePath}'
+             |        TBLPROPERTIES ('PARQUET.COMPRESS'='SNAPPY')
              |        AS ${query}
           """.stripMargin
         val response = driver.run(createQuery)

@@ -9,8 +9,8 @@ import scala.reflect.macros._
 import scala.collection.immutable.ListMap
 
 
-object ThriftHiveType {
-  def apply[T <: ThriftStruct] = macro impl[T]
+object GenerateHiveType {
+  def apply[T] = macro impl[T]
 
   def impl[T](c: Context)(implicit typ: c.WeakTypeTag[T]): c.Expr[HiveType] = {
     import c.universe._
@@ -20,6 +20,21 @@ object ThriftHiveType {
 
     c.Expr[HiveType](
       q"com.rouesnel.typedsql.core.HiveType.parseHiveType(${Literal(Constant(hiveType.hiveType))}).toOption.get"
+    )
+  }
+}
+
+object ThriftStructType {
+  def apply[T <: ThriftStruct] = macro impl[T]
+
+  def impl[T](c: Context)(implicit typ: c.WeakTypeTag[T]): c.Expr[StructType] = {
+    import c.universe._
+
+    val hiveType = new ThriftHiveTypeMacro[c.type](c)
+      .convertScalaToHiveType(c.weakTypeOf[T])
+
+    c.Expr[StructType](
+      q"com.rouesnel.typedsql.core.HiveType.parseHiveType(${Literal(Constant(hiveType.hiveType))}).toOption.get.asInstanceOf[com.rouesnel.typedsql.core.StructType]"
     )
   }
 }
@@ -41,7 +56,7 @@ class ThriftHiveTypeMacro[C <: Context](val c: C) {
   val byteType      = c.weakTypeOf[Byte]
   val floatType     = c.weakTypeOf[Float]
   val bigDecimalType = c.weakTypeOf[java.math.BigDecimal]
-  val thriftType    = c.weakTypeOf[ThriftStruct]
+  val thriftType     = c.weakTypeOf[ThriftStruct]
 
   /** Converts a Scala type to a Hive type */
   def convertScalaToHiveType(tpe: Type): HiveType = tpe match {
@@ -55,10 +70,10 @@ class ThriftHiveTypeMacro[C <: Context](val c: C) {
     case typ if (typ <:< booleanType)      => BooleanType
     case typ if (typ <:< dateType)         => DateType
     case typ if (typ <:< bigDecimalType)   => DecimalType(10, 0)
-    case typ if (typ <:< stringType) => StringType
+    case typ if (typ <:< stringType)       => StringType
     case map if (map <:< mapType) => {
       val key :: value :: Nil = map.typeArgs
-      MapType(convertScalaToHiveType(key), convertScalaToHiveType(key))
+      MapType(convertScalaToHiveType(key), convertScalaToHiveType(value))
     }
     case seq if (seq <:< seqType) => {
       val inner = seq.typeArgs.head
@@ -104,12 +119,11 @@ class ThriftHiveTypeMacro[C <: Context](val c: C) {
           .toLowerCase()
 
       underscoredName -> fieldType
-    })
+    }).reverse
+
 
     StructType(listMap(cleanedFields.map({
       case (fieldName, fieldType) => fieldName -> convertScalaToHiveType(fieldType)
     })))
   }
-
-
 }

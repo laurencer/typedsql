@@ -88,7 +88,7 @@ final case object TinyIntType extends PrimitiveType {
   def thriftTypeName = "BYTE"
 }
 final case object ShortType extends PrimitiveType {
-  def hiveType = "int"
+  def hiveType = "smallint"
   def scalaTypeName = "Short"
   def thriftTypeName = "I16"
 }
