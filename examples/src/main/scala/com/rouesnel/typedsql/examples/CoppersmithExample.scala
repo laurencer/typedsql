@@ -42,7 +42,7 @@ import com.rouesnel.typedsql.DataSource
     val source   = From[Row]()  // FeatureSource (see above)
     val select   = source.featureSetBuilder(namespace, entity)
 
-    val customerAge = select(_.age)
+    val customerAge = select(_.age.toInt)
       .asFeature(Continuous, "CUSTOMER_AGE", Some(MinMaxRange(0, 130)),
         "Age of customer in years")
 

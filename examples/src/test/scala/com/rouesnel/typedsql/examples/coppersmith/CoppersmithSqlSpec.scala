@@ -14,7 +14,7 @@ class CoppersmithSqlSpec extends TypedSqlSpec { def is = s2"""
   def basic = {
     def date = new Date().getTime.toInt
 
-    val customers       = createDataSource(
+    val customers       = createDataSource(ThriftStructType[Customer])(
       Customer(123, "Bob",   "Brown", date, "bb@email.com", Some("MALE"), 32)
     , Customer(124, "Diana", "Brown", date, "db@email.com", Some("FEMALE"), 31)
     , Customer(125, "Aaron", "Brown", date, "ab@email.com", Some("FEMALE"), 14)
@@ -22,8 +22,8 @@ class CoppersmithSqlSpec extends TypedSqlSpec { def is = s2"""
     val orders          = createDataSource(
       Order("O_000098", 123, date, None, None, None)
     )
-    val orderLineItems  = createDataSource[OrderLineItem]()
-    val payments        = createDataSource[Payment]()
+    val orderLineItems  = createDataSource[OrderLineItem](ThriftStructType[OrderLineItem])()
+    val payments        = createDataSource[Payment](ThriftStructType[Payment])()
 
 
     val dataSource: DataSource[TypedSqlCoppersmithExample.Row] =

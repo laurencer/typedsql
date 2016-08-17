@@ -1,6 +1,7 @@
 package com.rouesnel.typedsql.examples
 
 import com.rouesnel.typedsql._
+import com.rouesnel.typedsql.examples.coppersmith.Customer
 import com.rouesnel.typedsql.test._
 
 class SqlSpec extends TypedSqlSpec { def is = s2"""
@@ -8,8 +9,8 @@ class SqlSpec extends TypedSqlSpec { def is = s2"""
 """
 
   def basic = {
-    val people          = createDataSource(Person("Bob", "Brown", 28))
-    val manualSqlStruct = createDataSource[ManualSqlStruct]()
+    val people          = createDataSource(ThriftStructType[Person])(Person("Bob", "Brown", 28))
+    val manualSqlStruct = createDataSource[ManualSqlStruct](ThriftStructType[ManualSqlStruct])()
 
     val sqlDataSource: DataSource[SqlQueryExample.Row] =
       SqlQueryExample.query(18)(people, manualSqlStruct, people)
