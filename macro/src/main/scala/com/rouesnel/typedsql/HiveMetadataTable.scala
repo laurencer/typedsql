@@ -1,15 +1,18 @@
 package com.rouesnel.typedsql
 
-import au.com.cba.omnia.beeswax.{Hive, ParquetFormat}
+import au.com.cba.omnia.beeswax._
+import au.com.cba.omnia.omnitool.Result
 import com.rouesnel.typedsql.core.{HiveType, StructType}
 
 import scala.collection.JavaConversions._
+import scala.collection.convert.decorateAsScala._
 import scala.collection.{Map => CMap}
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.metastore.TableType
-import org.apache.hadoop.hive.metastore.api.{AlreadyExistsException, FieldSchema, StorageDescriptor, Table => MetadataTable}
+import org.apache.hadoop.hive.metastore.api.{AlreadyExistsException, FieldSchema, NoSuchObjectException, StorageDescriptor, Table => MetadataTable}
 import org.apache.thrift.protocol.TType
 import com.twitter.scrooge.{ThriftStruct, ThriftStructCodec, ThriftStructField}
+import org.apache.hadoop.hive.conf.HiveConf.ConfVars
 import org.slf4j.LoggerFactory
 
 import scala.util.control.NonFatal
@@ -74,7 +77,7 @@ object HiveMetadataTable {
       Hive.existsTable(database, table) >>= (exists =>
       if (exists)
         Hive.mandatory(
-          Hive.existsTableStrict[T](database, table, partitionColumns, location, ParquetFormat),
+          existsTableStrict[T](structType, database, table, partitionColumns, location, ParquetFormat),
           s"$database.$table already exists but has different schema."
         ).map(_ => false)
       else
@@ -88,7 +91,7 @@ object HiveMetadataTable {
           } catch {
             case _: AlreadyExistsException =>
               Hive.mandatory(
-                Hive.existsTableStrict[T](database, table, partitionColumns, location, ParquetFormat),
+                existsTableStrict[T](structType, database, table, partitionColumns, location, ParquetFormat),
                 s"$database.$table already exists but has different schema."
               ).map(_ => false)
             case NonFatal(t)               => Hive.error(s"Failed to create table $database.$table", t)
@@ -96,4 +99,60 @@ object HiveMetadataTable {
         }
       )
   }
+
+  def existsTableStrict[T <: ThriftStruct : Manifest : HasStructType](database: String, table: String, partitionColumns: List[(String, String)],
+                                                      location: Option[Path]
+                                                     ): Hive[Boolean] = {
+    existsTableStrict(
+      implicitly[HasStructType[T]].structType,
+      database,
+      table,
+      partitionColumns,
+      location
+    )
+  }
+
+  /** Checks if a table with the same name and schema already exists. */
+  def existsTableStrict[T <: ThriftStruct : Manifest](hiveType: StructType,
+                                                       database: String, table: String, partitionColumns: List[(String, String)],
+                                                       location: Option[Path] = None, format: HiveStorageFormat = ParquetFormat
+                                                     ): Hive[Boolean] = Hive((conf, client) => try {
+    val fs               = FileSystem.get(conf)
+    val actualTable      = client.getTable(database, table)
+    val expectedTable    = HiveMetadataTable[T](hiveType, database, table, partitionColumns, location.map(fs.makeQualified(_)))
+    val actualCols       = actualTable.getSd.getCols.asScala.map(c => (c.getName.toLowerCase, c.getType.toLowerCase)).toList
+    val expectedCols     = expectedTable.getSd.getCols.asScala.map(c => (c.getName.toLowerCase, c.getType.toLowerCase)).toList
+    //partition keys of unpartitioned table comes back from the metastore as an empty list
+    val actualPartCols   = actualTable.getPartitionKeys.asScala.map(pc => (pc.getName.toLowerCase, pc.getType.toLowerCase)).toList
+    //partition keys of unpartitioned table not submitted to the metastore will be null
+    val expectedPartCols = Option(expectedTable.getPartitionKeys).map(_.asScala.map(
+      pc => (pc.getName.toLowerCase, pc.getType.toLowerCase)).toList
+    ).getOrElse(List.empty)
+    val warehouse        = conf.getVar(ConfVars.METASTOREWAREHOUSE)
+    val actualPath       = fs.makeQualified(new Path(actualTable.getSd.getLocation))
+    //Do we want to handle `default` database separately
+    val expectedLocation = Option(expectedTable.getSd.getLocation).getOrElse(
+      s"$warehouse/${expectedTable.getDbName}.db/${expectedTable.getTableName}"
+    )
+    val expectedPath     = fs.makeQualified(new Path(expectedLocation))
+
+    val delimiterComparison = format match {
+      case ParquetFormat => true
+      case TextFormat(delimiter) =>
+        actualTable.getSd.getSerdeInfo.getParameters.asScala.get("field.delim").exists(_ == delimiter)
+    }
+
+    Result.ok(
+      actualTable.getTableType          == expectedTable.getTableType          &&
+        actualPath                        == expectedPath                        &&
+        actualCols                        == expectedCols                        &&
+        actualPartCols                    == expectedPartCols                    &&
+        actualTable.getSd.getInputFormat  == expectedTable.getSd.getInputFormat  &&
+        actualTable.getSd.getOutputFormat == expectedTable.getSd.getOutputFormat &&
+        delimiterComparison
+    )
+  } catch {
+    case _: NoSuchObjectException => Result.ok(false)
+    case NonFatal(t)              => Result.error(s"Failed to check strict existence of $database.$table", t)
+  })
 }

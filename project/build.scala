@@ -164,7 +164,7 @@ object build extends Build {
             assembledJar
           }
       )
-  ) dependsOn(macros, test % "test->compile")
+  ) dependsOn(macros, coreMacros, test % "test->compile")
 
   lazy val test = Project(
     id = "test"
@@ -188,5 +188,5 @@ object build extends Build {
         "au.com.cba.omnia" %% "thermometer-hive" %  "1.4.2-20160414053315-99c196d"
       )
     )
-  ) dependsOn(macros)
+  ) dependsOn(macros, coreMacros, core)
 }

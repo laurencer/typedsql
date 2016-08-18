@@ -25,8 +25,6 @@ object ComplexExampleApp extends ExecutionApp {
     log.info(ThriftStructType[ComplexValue].hiveType)
     val source: DataSource[ComplexValue] =
       TypedPipeDataSource(
-        ThriftStructType[ComplexValue],
-
         TypedPipe.from(
           IterableSource(List(
             ComplexValue(Map(

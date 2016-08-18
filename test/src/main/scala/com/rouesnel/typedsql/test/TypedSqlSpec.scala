@@ -8,7 +8,8 @@ import au.com.cba.omnia.thermometer.hive.ThermometerHiveSpec
 import com.rouesnel.typedsql.{DataSource, TypedPipeDataSource}
 import com.rouesnel.typedsql.DataSource.Config
 import au.com.cba.omnia.beeswax.Hive
-import com.rouesnel.typedsql.core.StructType
+import com.rouesnel.typedsql._
+import com.rouesnel.typedsql.core._
 import com.twitter.scalding.typed.IterablePipe
 import com.twitter.scrooge.ThriftStruct
 
@@ -50,7 +51,7 @@ abstract class TypedSqlSpec extends ThermometerHiveSpec with ParquetLogging {
     )
   }
 
-  def createDataSource[T <: ThriftStruct : Manifest](structType: StructType)(elements: T*): DataSource[T] = {
-    TypedPipeDataSource(structType, IterablePipe[T](elements))
+  def createDataSource[T <: ThriftStruct : Manifest : HasStructType](structType: StructType)(elements: T*): DataSource[T] = {
+    TypedPipeDataSource[T](structType, IterablePipe[T](elements))
   }
 }
