@@ -51,7 +51,7 @@ abstract class TypedSqlSpec extends ThermometerHiveSpec with ParquetLogging {
     )
   }
 
-  def createDataSource[T <: ThriftStruct : Manifest : HasStructType](structType: StructType)(elements: T*): DataSource[T] = {
+  def createDataSource[T <: ThriftStruct : Manifest : HasStructType](elements: T*): DataSource[T] = {
     TypedPipeDataSource[T](IterablePipe[T](elements))
   }
 }
