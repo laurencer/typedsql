@@ -289,7 +289,7 @@ case class TypedPipeDataSource[T <: ThriftStruct : Manifest : HasStructType](
     val db :: table :: Nil = tableName.split("\\.").toList
     pipe.writeExecution(ParquetScroogeSource[T](path)).flatMap(_ => Execution.from {
       DataSource.synchronized {
-        HiveMetadataTable.createTable[T](structType, db, table, Nil, Some(new Path(path))).run(config.conf) match {
+        HiveMetadataTable.createTable[T](db, table, Nil, Some(new Path(path))).run(config.conf) match {
           case Ok(_)        => MaterialisedHiveTable(path, tableName)
           case Error(these) => these.fold(
             msg   => throw new Exception(s"Error creating Hive table: ${msg}"),
@@ -464,6 +464,7 @@ case class HiveQueryDataSource[T <: ThriftStruct : Manifest : HasStructType](
 case class PersistedDataSource[T <: ThriftStruct : Manifest : HasStructType](underlying: PersistableSource[T],
                                                              strategy: DataSource.Strategy[T]
                                                          ) extends DataSource[T] {
+
   def toTypedPipe(config: DataSource.Config): Execution[TypedPipe[T]] =
     strategy(config, underlying).flatMap(_.toTypedPipe(config))
 
