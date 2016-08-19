@@ -16,42 +16,61 @@ class UDFMapping[C <: whitebox.Context](val c: C) {
   private val doubleType  = c.weakTypeOf[Double]
   private val stringType  = c.weakTypeOf[String]
 
+  val hiveTypeMapping = new ThriftHiveTypeMacro[c.type](c)
+
   def toHiveType(tpt: Type): HiveType = {
     if (tpt == null) {
       c.abort(c.enclosingPosition, "tpt is null")
     }
-    if (intType == null) {
-      c.abort(c.enclosingPosition, "intType is null")
-    }
-    tpt match {
-      case tpe if tpe <:< intType    => IntType
-      case tpe if tpe <:< doubleType => DoubleType
-      case tpe if tpe <:< stringType => StringType
-    }
+
+    hiveTypeMapping.convertScalaToHiveType(tpt)
   }
 
   private def hiveTypeToUdfInspector(typ: HiveType): Tree = {
     val primitiveObjectInspectorFactory = q"org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory"
     val mapping = typ match {
-      case IntType    => "Int"
-      case StringType => "String"
-      case DoubleType => "Double"
+      case BooleanType => "Boolean"
+      case TinyIntType => "Byte"
+      case ShortType   => "Short"
+      case IntType     => "Int"
+      case LongType    => "Long"
+      case StringType  => "String"
+      case FloatType   => "Float"
+      case DoubleType  => "Double"
+      // case DateType    => "Date"
+      // case DecimalType(_, _) => "HiveDecimal"
+      case other => c.abort(c.enclosingPosition, s"${other} is not a support type for UDF parameters.")
     }
     q"${primitiveObjectInspectorFactory}.${TermName("java" + mapping + "ObjectInspector")}"
   }
 
-  private def hiveTypeToScalaType(typ: HiveType): Tree = {
-    typ match {
-      case IntType    => tq"Int"
-      case StringType => tq"String"
-      case DoubleType => tq"Double"
-    }
-  }
-
   private def primitiveMatchers(typ: HiveType): List[CaseDef] = typ match {
-    case IntType       => List(cq"iw: org.apache.hadoop.io.IntWritable => iw.get()")
-    case DoubleType    => List(cq"iw: org.apache.hadoop.io.IntWritable => iw.get()")
-    case StringType    => List(cq"str: String => str")
+    case BooleanType    => List(
+      cq"iw: org.apache.hadoop.io.BooleanWritable => iw.get()"
+    )
+    case TinyIntType    => List(
+      cq"iw: org.apache.hadoop.io.ByteWritable => iw.get()"
+    )
+    case ShortType    => List(
+      cq"iw: org.apache.hadoop.io.ShortWritable => iw.get()"
+    )
+    case IntType    => List(
+      cq"iw: org.apache.hadoop.io.IntWritable => iw.get()"
+    )
+    case LongType    => List(
+      cq"iw: org.apache.hadoop.io.IntWritable => iw.get()",
+      cq"iw: org.apache.hadoop.io.LongWritable => iw.get()"
+    )
+    case FloatType    => List(
+      cq"iw: org.apache.hadoop.io.FloatWritable => iw.get()"
+    )
+    case DoubleType => List(
+      cq"iw: org.apache.hadoop.io.FloatWritable => iw.get()",
+      cq"iw: org.apache.hadoop.io.DoubleWritable => iw.get()"
+    )
+    case StringType => List(
+      cq"str: String => str"
+    )
   }
 
   private def generateUdf(udf: UdfDescription, body: Tree): Tree = {
@@ -60,7 +79,7 @@ class UDFMapping[C <: whitebox.Context](val c: C) {
       case ((name, typ), idx) =>
         q"""val ${TermName(name)} = (${hiveTypeToUdfInspector(typ)}.getPrimitiveJavaObject(_parameters(${Literal(Constant(idx))}).get()) match {
               case ..${primitiveMatchers(typ)}
-            }).asInstanceOf[${hiveTypeToScalaType(typ)}]
+            }).asInstanceOf[${hiveTypeMapping.convertHiveTypeToScalaType(typ)}]
          """
     })
 

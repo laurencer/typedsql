@@ -87,6 +87,22 @@ class ThriftHiveTypeMacro[C <: Context](val c: C) {
     }
   }
 
+  def convertHiveTypeToScalaType(hiveType: HiveType): c.Type = hiveType match {
+    case BooleanType  => booleanType
+    case DoubleType   => doubleType
+    case IntType      => intType
+    case FloatType    => floatType
+    case LongType     => longType
+    case ShortType    => shortType
+    case TinyIntType  => byteType
+    case DateType     => dateType
+    case StringType   => stringType
+    case _: DecimalType => bigDecimalType
+    case MapType(key, value) => tq"scala.collection.Map[${convertHiveTypeToScalaType(key)}, ${convertHiveTypeToScalaType(value)}]".tpe
+    case ArrayType(value)    => tq"scala.collection.Seq[${convertHiveTypeToScalaType(value)}]".tpe
+    case StructType(_) => c.abort(c.enclosingPosition, "Struct/complex types are not supported.")
+  }
+
   /** Converts a Scrooge struct type to a Hive type */
   def mapObjectTypeToHiveSchema(thriftCompanion: Type): StructType = {
     // Now we can extract all relevant fields and reverse a schema.
