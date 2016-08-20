@@ -16,17 +16,4 @@ object ExceptionString {
     }
     sb.toString()
   }
-
-  def rerouteErrPrintStream[T](f: => T): T = {
-    val currentErr = System.err
-    val currentOut = System.out
-    System.setErr(new PrintStream(new java.io.File("target/errors.log")))
-    System.setOut(new PrintStream(new java.io.File("target/output.log")))
-    try {
-      f
-    } finally {
-      System.setErr(currentErr)
-      System.setOut(currentOut)
-    }
-  }
 }

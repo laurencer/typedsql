@@ -103,15 +103,13 @@ object HiveQuery {
             .fold(err => throw new Exception(err), identity)
 
           // Run the query.
-          util.ExceptionString.rerouteErrPrintStream {
-            driver.init()
-            driver.compile(query)
-            val result = driver.getSchema()
+          driver.init()
+          driver.compile(query)
+          val result = driver.getSchema()
 
-            udfs.foreach(udf => FunctionRegistry.unregisterTemporaryUDF(udf.name))
+          udfs.foreach(udf => FunctionRegistry.unregisterTemporaryUDF(udf.name))
 
-            result
-          }
+          result
         }
       }
     }
