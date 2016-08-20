@@ -1,12 +1,9 @@
-package com.rouesnel.typedsql
+package com.rouesnel.typedsql.macros
 
-import com.twitter.scrooge.ThriftStruct
-
-import scala.collection.immutable.ListMap
-import scala.reflect.api.Trees
-import scala.reflect.macros.whitebox
 import com.rouesnel.typedsql.core._
 
+import scala.reflect.api.Trees
+import scala.reflect.macros.whitebox
 import scalaz.{-\/, \/, \/-}
 
 class SourceMapping[C <: whitebox.Context](val c: C) {

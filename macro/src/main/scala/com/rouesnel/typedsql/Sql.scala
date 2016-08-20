@@ -4,13 +4,15 @@ import scala.annotation.compileTimeOnly
 import scala.annotation.StaticAnnotation
 import scala.collection.convert.decorateAsScala._
 import scala.collection.immutable.ListMap
-import scala.concurrent._, duration._
+import scala.concurrent._
+import duration._
 import scala.language.experimental.macros
 import scala.reflect.macros._
-
-import scalaz._, Scalaz._
-
+import scalaz._
+import Scalaz._
 import com.rouesnel.typedsql.core._
+import com.rouesnel.typedsql.hive.{HiveCache, HiveSupport}
+import com.rouesnel.typedsql.macros.{ParameterMapping, ScroogeGenerator, SourceMapping, UDFMapping}
 import com.rouesnel.typedsql.util._
 
 @compileTimeOnly("enable macro paradise to expand macro annotations")
@@ -94,27 +96,28 @@ object SqlQuery {
 
           val outputRecordFields =
             HiveCache
-              .cached(hiveConf, sources, parameters, udfDescriptions, sqlStatement, cacheLogger)(schema => {
-                Option(schema)
-                  .map(_.getFieldSchemas.asScala
-                    .map(fieldSchema => {
-                      val fieldName = fieldSchema.getName
-                      val fieldType =
-                        HiveType
-                          .parseHiveType(fieldSchema.getType)
-                          .fold(
-                            missingType =>
-                              c.abort(
-                                c.enclosingPosition,
-                                s"Could not find Scala type to match Hive type ${missingType} (in ${fieldSchema.getType}) for column ${fieldName}"),
-                            identity)
-                      (fieldName, fieldType)
-                    })
-                    .toList)
-                  .getOrElse(
-                    c.abort(c.enclosingPosition, s"Could not evaluate Hive Schema for ${tpname}")
-                  )
-              })
+              .cached(hiveConf, sources, parameters, udfDescriptions, sqlStatement, cacheLogger)(
+                schema => {
+                  Option(schema)
+                    .map(_.getFieldSchemas.asScala
+                      .map(fieldSchema => {
+                        val fieldName = fieldSchema.getName
+                        val fieldType =
+                          HiveType
+                            .parseHiveType(fieldSchema.getType)
+                            .fold(
+                              missingType =>
+                                c.abort(
+                                  c.enclosingPosition,
+                                  s"Could not find Scala type to match Hive type ${missingType} (in ${fieldSchema.getType}) for column ${fieldName}"),
+                              identity)
+                        (fieldName, fieldType)
+                      })
+                      .toList)
+                    .getOrElse(
+                      c.abort(c.enclosingPosition, s"Could not evaluate Hive Schema for ${tpname}")
+                    )
+                })
               .fold(
                 ex =>
                   c.abort(

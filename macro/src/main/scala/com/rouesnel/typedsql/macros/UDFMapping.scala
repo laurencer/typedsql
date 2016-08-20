@@ -1,11 +1,9 @@
-package com.rouesnel.typedsql
+package com.rouesnel.typedsql.macros
 
 import com.rouesnel.typedsql.core._
+import com.rouesnel.typedsql.udf
 import com.rouesnel.typedsql.udf._
 
-import com.twitter.scrooge.ThriftStruct
-
-import scala.collection.immutable.ListMap
 import scala.reflect.api.Trees
 import scala.reflect.macros.whitebox
 

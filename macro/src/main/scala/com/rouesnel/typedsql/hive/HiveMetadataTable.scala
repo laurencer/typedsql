@@ -1,16 +1,11 @@
-package com.rouesnel.typedsql
+package com.rouesnel.typedsql.hive
 
 import au.com.cba.omnia.beeswax._
 import au.com.cba.omnia.omnitool.Result
-
 import com.rouesnel.typedsql.core._
-
-import scala.collection.JavaConversions._
-import scala.collection.convert.decorateAsScala._
-import scala.collection.{Map => CMap}
-import scala.util.control.NonFatal
-
+import com.twitter.scrooge.ThriftStruct
 import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.hadoop.hive.conf.HiveConf.ConfVars
 import org.apache.hadoop.hive.metastore.TableType
 import org.apache.hadoop.hive.metastore.api.{
   AlreadyExistsException,
@@ -19,13 +14,14 @@ import org.apache.hadoop.hive.metastore.api.{
   StorageDescriptor,
   Table => MetadataTable
 }
-
-import com.twitter.scrooge.ThriftStruct
-import org.apache.hadoop.hive.conf.HiveConf.ConfVars
 import org.slf4j.LoggerFactory
 
+import scala.collection.JavaConversions._
+import scala.collection.convert.decorateAsScala._
+import scala.collection.{Map => CMap}
+import scala.util.control.NonFatal
+import scalaz.Scalaz._
 import scalaz._
-import Scalaz._
 
 /** Replicates the functionality from cascading-hive and beeswax s.*/
 object HiveMetadataTable {

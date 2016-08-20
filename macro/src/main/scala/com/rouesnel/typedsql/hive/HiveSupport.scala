@@ -1,13 +1,13 @@
-package com.rouesnel.typedsql
+package com.rouesnel.typedsql.hive
 
 import java.io.File
 
-import scala.concurrent._
-import scala.language.experimental.macros
-
 import org.apache.hadoop.hive.conf.HiveConf
 
-import scalaz._, Scalaz._
+import scala.concurrent._
+import scala.language.experimental.macros
+import scalaz.Scalaz._
+import scalaz._
 
 /** Provides functions to support a fake Hive environment */
 object HiveSupport {
@@ -34,8 +34,11 @@ object HiveSupport {
                  log: String => Unit = noopLogger): Future[HiveConf] = Future {
     log("Starting to initialize Hive.")
     def _initialize = {
-      import org.apache.hadoop.hive.conf.HiveConf, HiveConf.ConfVars, ConfVars._
-      import org.apache.hadoop.hive.metastore._, api._
+      import org.apache.hadoop.hive.conf.HiveConf
+      import HiveConf.ConfVars
+      import ConfVars._
+      import org.apache.hadoop.hive.metastore._
+      import api._
 
       log("Creating temporary directory for Hive.")
       val tempDir = File.createTempFile("hive", "compile")

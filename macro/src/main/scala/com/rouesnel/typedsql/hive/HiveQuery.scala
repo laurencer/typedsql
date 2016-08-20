@@ -1,21 +1,21 @@
-package com.rouesnel.typedsql
+package com.rouesnel.typedsql.hive
 
-import java.io.{FileInputStream, FileOutputStream}
 import java.util.Date
 
-import scala.language.experimental.macros
-import scala.util.control.NonFatal
+import com.rouesnel.typedsql.core._
+import com.rouesnel.typedsql.udf.{PlaceholderUDF, UdfDescription}
+import com.rouesnel.typedsql.util
 import org.apache.hadoop.hive.conf.HiveConf
 import org.apache.hadoop.hive.metastore.api._
 import org.apache.hadoop.hive.ql.Driver
+import org.apache.hadoop.hive.ql.exec.FunctionRegistry
 import org.apache.hadoop.hive.ql.parse._
 import org.apache.hadoop.hive.ql.session.SessionState
 
+import scala.language.experimental.macros
+import scala.util.control.NonFatal
+import scalaz.Scalaz._
 import scalaz._
-import Scalaz._
-import com.rouesnel.typedsql.core._
-import com.rouesnel.typedsql.udf.{PlaceholderUDF, UdfDescription}
-import org.apache.hadoop.hive.ql.exec.FunctionRegistry
 
 /** Provides helpers for parsing/manipulating Hive queries */
 object HiveQuery {

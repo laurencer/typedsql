@@ -1,19 +1,18 @@
-package com.rouesnel.typedsql
+package com.rouesnel.typedsql.hive
 
-import java.io.{FileInputStream, FileOutputStream}
+import java.io.FileOutputStream
 
-import scala.language.experimental.macros
+import argonaut.Argonaut._
+import argonaut._
+import com.rouesnel.typedsql.core._
+import com.rouesnel.typedsql.udf.UdfDescription
+import com.rouesnel.typedsql.util._
 import org.apache.hadoop.hive.conf.HiveConf
 import org.apache.hadoop.hive.metastore.api._
 import org.apache.hadoop.hive.ql.Driver
 
+import scala.language.experimental.macros
 import scalaz._
-import Scalaz._
-import com.rouesnel.typedsql.core._
-import com.rouesnel.typedsql.util._
-import argonaut._
-import Argonaut._
-import com.rouesnel.typedsql.udf.UdfDescription
 
 /**
   * Provides a caching mechanism that persists Hive results to the target folder to improve

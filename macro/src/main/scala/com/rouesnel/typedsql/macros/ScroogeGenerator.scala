@@ -1,8 +1,8 @@
-package com.rouesnel.typedsql
-
-import scala.reflect.macros.whitebox
+package com.rouesnel.typedsql.macros
 
 import com.rouesnel.typedsql.core._
+
+import scala.reflect.macros.whitebox
 
 class ScroogeGenerator[Context <: whitebox.Context](val c: Context) {
   import c.universe._

@@ -1,4 +1,4 @@
-package com.rouesnel.typedsql
+package com.rouesnel.typedsql.macros
 
 import scala.reflect.api.Trees
 import scala.reflect.macros.{TypecheckException, whitebox}
