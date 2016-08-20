@@ -2,7 +2,8 @@ package com.rouesnel.typedsql.examples
 
 import com.rouesnel.typedsql.{DataSource, SqlQuery}
 
-@SqlQuery object MissingParametersExample {
+@SqlQuery
+object MissingParametersExample {
 
   def query(upstream: DataSource[SqlQueryExample.Row]) =
     """

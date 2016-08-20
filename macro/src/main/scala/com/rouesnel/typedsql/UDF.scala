@@ -1,7 +1,5 @@
 package com.rouesnel.typedsql
 
-import scala.annotation.{StaticAnnotation, compileTimeOnly}
+import scala.annotation.StaticAnnotation
 
-class UDF extends StaticAnnotation {
-
-}
+class UDF extends StaticAnnotation {}

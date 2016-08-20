@@ -2,17 +2,17 @@ package com.rouesnel.typedsql.examples
 
 import com.rouesnel.typedsql._
 
-@SqlQuery object SqlQueryExample {
+@SqlQuery
+object SqlQueryExample {
 
   @UDF def myUdf(input: Int): String = (0 to input).toList.mkString(",")
 
-  @com.rouesnel.typedsql.UDF def myOtherUdf(input: Double): Int = ???
+  @com.rouesnel.typedsql.UDF
+  def myOtherUdf(input: Double): Int = ???
 
-  def query(minimumAge: Int)
-           (people: DataSource[com.rouesnel.typedsql.Person],
-            test: DataSource[ManualSqlStruct],
-            myPeople: DataSource[Person]
-           ) =
+  def query(minimumAge: Int)(people: DataSource[com.rouesnel.typedsql.Person],
+                             test: DataSource[ManualSqlStruct],
+                             myPeople: DataSource[Person]) =
     """
       SELECT 1 as int_value,
             1.3 as double_value,

@@ -2,7 +2,8 @@ package com.rouesnel.typedsql.examples
 
 import com.rouesnel.typedsql.{DataSource, SqlQuery}
 
-@SqlQuery object ExplodeExample {
+@SqlQuery
+object ExplodeExample {
 
   def query() =
     """

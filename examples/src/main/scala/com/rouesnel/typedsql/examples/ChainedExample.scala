@@ -2,8 +2,8 @@ package com.rouesnel.typedsql.examples
 
 import com.rouesnel.typedsql.{DataSource, SqlQuery}
 
-
-@SqlQuery object ChainedExample {
+@SqlQuery
+object ChainedExample {
 
   def query(upstream: DataSource[SqlQueryExample.Row]) =
     """

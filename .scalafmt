@@ -1,0 +1,4 @@
+# Scalafmt configuration
+
+--style defaultWithAlign
+--maxColumn 100

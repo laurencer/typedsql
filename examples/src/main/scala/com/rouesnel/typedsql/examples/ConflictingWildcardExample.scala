@@ -34,4 +34,4 @@ without breaking the compiler :(
        SELECT * FROM ${wildcardA} a INNER JOIN ${wildcardB} b ON a.firstname = b.firstname
     """
 }
-*/
+ */

@@ -8,12 +8,14 @@ import scala.util.Random
 import scala.util.Random
 
 object CompiledSqlQuery {
-  def tmpDatabase     = "typedsql_tmp"
-  def tmpTableName()  = new Date().getTime + "_" + Random.nextLong
-  def tmpHdfsPath     = "/tmp"
+  def tmpDatabase = "typedsql_tmp"
+  def tmpTableName() =
+    new Date().getTime + "_" + Random.nextLong
+  def tmpHdfsPath = "/tmp"
 }
 
 trait CompiledSqlQuery {
+
   /** The HiveQL - note this must be a string literal */
   def sql: String
 
@@ -31,8 +33,11 @@ trait CompiledSqlQuery {
 }
 
 object SqlParameter {
-  def write[T](value: T)(implicit writer: SqlParameter[T]) = writer.write(value)
-  implicit def string = SqlParameter[String](value => "\"" + value + "\"")
-  implicit def int    = SqlParameter[Int](value => value.toString)
+  def write[T](value: T)(implicit writer: SqlParameter[T]) =
+    writer.write(value)
+  implicit def string =
+    SqlParameter[String](value => "\"" + value + "\"")
+  implicit def int =
+    SqlParameter[Int](value => value.toString)
 }
 case class SqlParameter[T](write: T => String)

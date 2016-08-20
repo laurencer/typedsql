@@ -10,7 +10,8 @@ import DataSource.Strategy._
 
 import com.rouesnel.typedsql.examples.coppersmith._
 
-@SqlQuery object Step1 {
+@SqlQuery
+object Step1 {
   def query =
     """
       SELECT "Bob" as firstname,
@@ -19,9 +20,11 @@ import com.rouesnel.typedsql.examples.coppersmith._
     """
 }
 
-@SqlQuery object Step2 {
+@SqlQuery
+object Step2 {
 
-  @UDF def joinNames(first: String, last: String): String = s"${last}, ${first}"
+  @UDF def joinNames(first: String, last: String): String =
+    s"${last}, ${first}"
 
   @UDF def birthyear(age: Int): Int = 1982
 
@@ -36,22 +39,27 @@ import com.rouesnel.typedsql.examples.coppersmith._
 
 object App extends ExecutionApp {
 
-  def job = Execution.getConfigMode.flatMap({ case (appConfig, Hdfs(_, conf)) => {
+  def job =
+    Execution.getConfigMode.flatMap({
+      case (appConfig, Hdfs(_, conf)) => {
 
-    val step1: DataSource[Step1.Row] =
-      Step1.query.persist(reuseExisting("step1", "example.step1", "examples/step1"))
+        val step1: DataSource[Step1.Row] =
+          Step1.query.persist(reuseExisting("step1", "example.step1", "examples/step1"))
 
-    val step2: DataSource[Step2.Row] =
-      Step2.query(step1)
-        .persist(flaggedReuse("step2", "example.step2", "examples/step2"))
+        val step2: DataSource[Step2.Row] =
+          Step2.query(step1).persist(flaggedReuse("step2", "example.step2", "examples/step2"))
 
-    def config = DataSource.defaultConfig(
-      conf = new HiveConf(conf, classOf[Configuration]),
-      args = appConfig.getArgs.m
-    )
+        def config = DataSource.defaultConfig(
+          conf = new HiveConf(conf, classOf[Configuration]),
+          args = appConfig.getArgs.m
+        )
 
-    step2.toHiveTable(config).onComplete(tried => {
-      println(tried)
-    }).map(_ => ())
-  }})
+        step2
+          .toHiveTable(config)
+          .onComplete(tried => {
+            println(tried)
+          })
+          .map(_ => ())
+      }
+    })
 }

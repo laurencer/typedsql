@@ -30,7 +30,8 @@ object HiveSupport {
 
   val noopLogger: String => Unit = _ => ()
 
-  def initialize(changeClassloader: Boolean = true, log: String => Unit = noopLogger): Future[HiveConf] = Future {
+  def initialize(changeClassloader: Boolean = true,
+                 log: String => Unit = noopLogger): Future[HiveConf] = Future {
     log("Starting to initialize Hive.")
     def _initialize = {
       import org.apache.hadoop.hive.conf.HiveConf, HiveConf.ConfVars, ConfVars._
@@ -47,15 +48,16 @@ object HiveSupport {
       lazy val hiveDb: String        = s"$hiveDir/hive_db"
       lazy val hiveWarehouse: String = s"$hiveDir/warehouse"
       lazy val derbyHome: String     = s"$hiveDir/derby"
-      lazy val hiveConf: HiveConf    = new HiveConf <| (conf => {
-        conf.setVar(METASTOREWAREHOUSE, hiveWarehouse)
-      })
+      lazy val hiveConf: HiveConf = new HiveConf <| (conf => {
+                                                     conf.setVar(METASTOREWAREHOUSE, hiveWarehouse)
+                                                   })
 
       // Export the warehouse path so it gets picked up when a new hive conf is instantiated somehwere else.
       System.setProperty(METASTOREWAREHOUSE.varname, hiveWarehouse)
       System.setProperty("derby.system.home", derbyHome)
       // Export the derby db file location so it is different for each test.
-      System.setProperty("javax.jdo.option.ConnectionURL", s"jdbc:derby:;databaseName=$hiveDb;create=true")
+      System.setProperty("javax.jdo.option.ConnectionURL",
+                         s"jdbc:derby:;databaseName=$hiveDb;create=true")
       System.setProperty("hive.metastore.ds.retry.attempts", "0")
 
       // Wait for the Hive client to initialise

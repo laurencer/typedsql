@@ -2,13 +2,15 @@ import sbt._
 import Keys._
 
 import au.com.cba.omnia.uniform.core.standard.StandardProjectPlugin._
-import au.com.cba.omnia.uniform.core.version.UniqueVersionPlugin._
 import au.com.cba.omnia.uniform.dependency.UniformDependencyPlugin._
-import depend.versions
 import au.com.cba.omnia.uniform.thrift.UniformThriftPlugin._
 import au.com.cba.omnia.uniform.assembly.UniformAssemblyPlugin._
+
 import sbtassembly.AssemblyKeys.{assembly => _, assemblyExcludedJars => _, _}
 import sbtassembly.AssemblyPlugin.autoImport._
+
+import org.scalafmt.sbt.ScalaFmtPlugin.autoImport._
+
 
 object build extends Build {
   lazy val coppersmithVersion = "0.21.3-20160724231815-2c523f2"
@@ -17,6 +19,7 @@ object build extends Build {
     Defaults.coreDefaultSettings ++
     uniformPublicDependencySettings ++
     Seq(
+      scalafmtConfig in ThisBuild := Some(file(".scalafmt")),
       concurrentRestrictions in Global += Tags.limit(Tags.Test, 1),
       dependencyOverrides += "com.chuusai" %% "shapeless" % "2.2.5" //until maestro is updated
     )

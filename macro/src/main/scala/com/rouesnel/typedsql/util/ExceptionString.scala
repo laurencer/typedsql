@@ -4,7 +4,7 @@ import java.io.PrintStream
 
 object ExceptionString {
   def apply(ex: Throwable, limit: Int = 5): String = {
-    var e = ex
+    var e  = ex
     val sb = new StringBuilder()
 
     sb.append(e.toString + "\n")

@@ -2,35 +2,44 @@ package com.rouesnel.typedsql
 
 import au.com.cba.omnia.beeswax._
 import au.com.cba.omnia.omnitool.Result
+
 import com.rouesnel.typedsql.core._
 
 import scala.collection.JavaConversions._
 import scala.collection.convert.decorateAsScala._
 import scala.collection.{Map => CMap}
+import scala.util.control.NonFatal
+
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.metastore.TableType
-import org.apache.hadoop.hive.metastore.api.{AlreadyExistsException, FieldSchema, NoSuchObjectException, StorageDescriptor, Table => MetadataTable}
-import org.apache.thrift.protocol.TType
-import com.twitter.scrooge.{ThriftStruct, ThriftStructCodec, ThriftStructField}
+import org.apache.hadoop.hive.metastore.api.{
+  AlreadyExistsException,
+  FieldSchema,
+  NoSuchObjectException,
+  StorageDescriptor,
+  Table => MetadataTable
+}
+
+import com.twitter.scrooge.ThriftStruct
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars
 import org.slf4j.LoggerFactory
 
-import scala.util.control.NonFatal
 import scalaz._
 import Scalaz._
 
-/** Replicates the functionality from cascading-hive.*/
+/** Replicates the functionality from cascading-hive and beeswax s.*/
 object HiveMetadataTable {
   val log = LoggerFactory.getLogger(getClass)
 
   /** While the earlier operations failed with exception from with the cascading-hive code,
-   * we need to deal with failure via `Result`
-   */
-  def apply[T <: ThriftStruct : HasStructType](database: String,
-                                tableName: String,
-                                partitionColumns: List[(String, String)],
-                                location: Option[Path] = None
-                              )(implicit m: Manifest[T]): MetadataTable = { // This operation could fail so type should convey it
+    * we need to deal with failure via `Result`
+    */
+  def apply[T <: ThriftStruct: HasStructType](database: String,
+                                              tableName: String,
+                                              partitionColumns: List[(String, String)],
+                                              location: Option[Path] = None)(
+      implicit m: Manifest[T])
+    : MetadataTable = { // This operation could fail so type should convey it
 
     val structType = implicitly[HasStructType[T]].structType
     // Making the types lowercase to enforce the same behaviour as in cascading-hive
@@ -38,7 +47,9 @@ object HiveMetadataTable {
       fieldSchema(c._1, c._2.hiveType)
     }
 
-    val partitionFieldSchemas = partitionColumns.map {case(n, t) => fieldSchema(n, t)}
+    val partitionFieldSchemas = partitionColumns.map {
+      case (n, t) => fieldSchema(n, t)
+    }
 
     assert(
       partitionColumns.map(_._1).toSet.intersect(structType.fields.map(_._1).toSet).isEmpty,
@@ -70,74 +81,105 @@ object HiveMetadataTable {
   def fieldSchema(n: String, t: String) =
     new FieldSchema(n, t, "Created by Ebenezer")
 
-
-  def createTable[T <: ThriftStruct : Manifest : HasStructType](database: String, table: String, partitionColumns: List[(String, String)],
+  def createTable[T <: ThriftStruct: Manifest: HasStructType](
+      database: String,
+      table: String,
+      partitionColumns: List[(String, String)],
       location: Option[Path] = None): Hive[Boolean] = {
-      Hive.createDatabase(database)     >>
-      Hive.existsTable(database, table) >>= (exists =>
-      if (exists)
-        Hive.mandatory(
-          existsTableStrict[T](database, table, partitionColumns, location),
-          s"$database.$table already exists but has different schema."
-        ).map(_ => false)
-      else
-        Hive.getConfClient >>= { case (conf, client) =>
-          val fqLocation = location.map(FileSystem.get(conf).makeQualified(_))
-          val metadataTable = HiveMetadataTable[T](database, table, partitionColumns, fqLocation)
+    Hive
+      .createDatabase(database)
+      .flatMap(_ => Hive.existsTable(database, table))
+      .flatMap(exists => {
+        if (exists)
+          Hive
+            .mandatory(
+              existsTableStrict[T](database, table, partitionColumns, location),
+              s"$database.$table already exists but has different schema."
+            )
+            .map(_ => false)
+        else {
+          Hive.getConfClient.flatMap({
+            case (conf, client) => {
+              val fqLocation =
+                location.map(FileSystem.get(conf).makeQualified(_))
+              val metadataTable =
+                HiveMetadataTable[T](database, table, partitionColumns, fqLocation)
 
-          try {
-            client.createTable(metadataTable)
-            Hive.value(true)
-          } catch {
-            case _: AlreadyExistsException =>
-              Hive.mandatory(
-                existsTableStrict[T](database, table, partitionColumns, location),
-                s"$database.$table already exists but has different schema."
-              ).map(_ => false)
-            case NonFatal(t)               => Hive.error(s"Failed to create table $database.$table", t)
-          }
+              try {
+                client.createTable(metadataTable)
+                Hive.value(true)
+              } catch {
+                case _: AlreadyExistsException =>
+                  Hive
+                    .mandatory(
+                      existsTableStrict[T](database, table, partitionColumns, location),
+                      s"$database.$table already exists but has different schema."
+                    )
+                    .map(_ => false)
+                case NonFatal(t) =>
+                  Hive.error(s"Failed to create table $database.$table", t)
+              }
+            }
+          })
         }
-      )
+      })
   }
 
-  def existsTableStrict[T <: ThriftStruct : Manifest : HasStructType](database: String, table: String, partitionColumns: List[(String, String)],
-                                                      location: Option[Path]
-                                                     ): Hive[Boolean] = Hive((conf, client) => try {
-    val fs               = FileSystem.get(conf)
-    val actualTable      = client.getTable(database, table)
-    val expectedTable    = HiveMetadataTable[T](database, table, partitionColumns, location.map(fs.makeQualified(_)))
-    val actualCols       = actualTable.getSd.getCols.asScala.map(c => (c.getName.toLowerCase, c.getType.toLowerCase)).toList
-    val expectedCols     = expectedTable.getSd.getCols.asScala.map(c => (c.getName.toLowerCase, c.getType.toLowerCase)).toList
+  def existsTableStrict[T <: ThriftStruct: Manifest: HasStructType](
+      database: String,
+      table: String,
+      partitionColumns: List[(String, String)],
+      location: Option[Path]): Hive[Boolean] =
+    Hive((conf, client) =>
+      try {
+        val fs          = FileSystem.get(conf)
+        val actualTable = client.getTable(database, table)
+        val expectedTable =
+          HiveMetadataTable[T](database,
+                               table,
+                               partitionColumns,
+                               location.map(fs.makeQualified(_)))
+        val actualCols = actualTable.getSd.getCols.asScala
+          .map(c => (c.getName.toLowerCase, c.getType.toLowerCase))
+          .toList
+        val expectedCols = expectedTable.getSd.getCols.asScala
+          .map(c => (c.getName.toLowerCase, c.getType.toLowerCase))
+          .toList
 
-    //partition keys of unpartitioned table comes back from the metastore as an empty list
-    val actualPartCols   = actualTable.getPartitionKeys.asScala.map(pc => (pc.getName.toLowerCase, pc.getType.toLowerCase)).toList
+        //partition keys of unpartitioned table comes back from the metastore as an empty list
+        val actualPartCols = actualTable.getPartitionKeys.asScala
+          .map(pc => (pc.getName.toLowerCase, pc.getType.toLowerCase))
+          .toList
 
-    //partition keys of unpartitioned table not submitted to the metastore will be null
-    val expectedPartCols = Option(expectedTable.getPartitionKeys).map(_.asScala.map(
-      pc => (pc.getName.toLowerCase, pc.getType.toLowerCase)).toList
-    ).getOrElse(List.empty)
-    val warehouse        = conf.getVar(ConfVars.METASTOREWAREHOUSE)
-    val actualPath       = fs.makeQualified(new Path(actualTable.getSd.getLocation))
+        //partition keys of unpartitioned table not submitted to the metastore will be null
+        val expectedPartCols = Option(expectedTable.getPartitionKeys)
+          .map(_.asScala.map(pc => (pc.getName.toLowerCase, pc.getType.toLowerCase)).toList)
+          .getOrElse(List.empty)
+        val warehouse = conf.getVar(ConfVars.METASTOREWAREHOUSE)
+        val actualPath =
+          fs.makeQualified(new Path(actualTable.getSd.getLocation))
 
-    //Do we want to handle `default` database separately
-    val expectedLocation = Option(expectedTable.getSd.getLocation).getOrElse(
-      s"$warehouse/${expectedTable.getDbName}.db/${expectedTable.getTableName}"
-    )
-    val expectedPath     = fs.makeQualified(new Path(expectedLocation))
+        //Do we want to handle `default` database separately
+        val expectedLocation =
+          Option(expectedTable.getSd.getLocation).getOrElse(
+            s"$warehouse/${expectedTable.getDbName}.db/${expectedTable.getTableName}"
+          )
+        val expectedPath = fs.makeQualified(new Path(expectedLocation))
 
-    val delimiterComparison = true // because of the Parquet format.
+        val delimiterComparison = true // because of the Parquet format.
 
-    Result.ok(
-        actualTable.getTableType          == expectedTable.getTableType          &&
-        actualPath                        == expectedPath                        &&
-        actualCols                        == expectedCols                        &&
-        actualPartCols                    == expectedPartCols                    &&
-        actualTable.getSd.getInputFormat  == expectedTable.getSd.getInputFormat  &&
-        actualTable.getSd.getOutputFormat == expectedTable.getSd.getOutputFormat &&
-        delimiterComparison
-    )
-  } catch {
-    case _: NoSuchObjectException => Result.ok(false)
-    case NonFatal(t)              => Result.error(s"Failed to check strict existence of $database.$table", t)
-  })
+        Result.ok(
+          actualTable.getTableType == expectedTable.getTableType &&
+            actualPath == expectedPath &&
+            actualCols == expectedCols &&
+            actualPartCols == expectedPartCols &&
+            actualTable.getSd.getInputFormat == expectedTable.getSd.getInputFormat &&
+            actualTable.getSd.getOutputFormat == expectedTable.getSd.getOutputFormat &&
+            delimiterComparison
+        )
+      } catch {
+        case _: NoSuchObjectException => Result.ok(false)
+        case NonFatal(t) =>
+          Result.error(s"Failed to check strict existence of $database.$table", t)
+    })
 }

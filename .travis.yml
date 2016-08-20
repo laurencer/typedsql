@@ -3,6 +3,7 @@ jdk: oraclejdk7
 sudo: false
 script:
 - sbt "test"
+- sbt "scalafmtTest"
 before_install:
 - openssl aes-256-cbc -pass pass:$ENCRYPTION_PASSWORD -in secring.gpg.enc -out local.secring.gpg
   -d
