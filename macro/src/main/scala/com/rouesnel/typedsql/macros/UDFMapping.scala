@@ -10,10 +10,6 @@ import scala.reflect.macros.whitebox
 class UDFMapping[C <: whitebox.Context](val c: C) {
   import c.universe._
 
-  private val intType    = c.weakTypeOf[Int]
-  private val doubleType = c.weakTypeOf[Double]
-  private val stringType = c.weakTypeOf[String]
-
   val hiveTypeMapping = new ThriftHiveTypeMacro[c.type](c)
 
   def toHiveType(tpt: Type): HiveType = {
@@ -36,7 +32,7 @@ class UDFMapping[C <: whitebox.Context](val c: C) {
       case StringType  => "String"
       case FloatType   => "Float"
       case DoubleType  => "Double"
-      // case DateType    => "Date"
+      case DateType    => "Date"
       // case DecimalType(_, _) => "HiveDecimal"
       case other =>
         c.abort(c.enclosingPosition, s"${other} is not a support type for UDF parameters.")
@@ -51,11 +47,13 @@ class UDFMapping[C <: whitebox.Context](val c: C) {
       )
     case TinyIntType =>
       List(
-        cq"iw: org.apache.hadoop.io.ByteWritable => iw.get()"
+        cq"iw: org.apache.hadoop.io.ByteWritable => iw.get()",
+        cq"iw: org.apache.hadoop.hive.serde2.io.ByteWritable => iw.get()"
       )
     case ShortType =>
       List(
-        cq"iw: org.apache.hadoop.io.ShortWritable => iw.get()"
+        cq"iw: org.apache.hadoop.io.ShortWritable => iw.get()",
+      cq"iw: org.apache.hadoop.hive.serde2.io.ShortWritable => iw.get()"
       )
     case IntType =>
       List(
@@ -68,25 +66,32 @@ class UDFMapping[C <: whitebox.Context](val c: C) {
       )
     case FloatType =>
       List(
+        cq"f: java.lang.Float => f",
         cq"iw: org.apache.hadoop.io.FloatWritable => iw.get()"
       )
     case DoubleType =>
       List(
-        cq"iw: org.apache.hadoop.io.FloatWritable => iw.get()",
-        cq"iw: org.apache.hadoop.io.DoubleWritable => iw.get()"
+        cq"iw: org.apache.hadoop.io.FloatWritable  => iw.get()",
+        cq"iw: org.apache.hadoop.io.DoubleWritable => iw.get()",
+        cq"iw: org.apache.hadoop.hive.serde2.io.DoubleWritable => iw.get()"
+  )
+    case DateType =>
+      List(
+        cq"date: java.sql.Date => date",
+        cq"iw: org.apache.hadoop.hive.serde2.io.DateWritable => iw.get()"
       )
     case StringType =>
       List(
-        cq"str: String => str"
+        cq"str: AnyRef => str.toString"
       )
+    case other => c.abort(c.enclosingPosition, s"${other.hiveType} is not yet supported for UDF parameters.")
   }
 
   private def generateUdf(udf: UdfDescription, body: Tree): Tree = {
 
     val parameterAccessors = udf.arguments.zipWithIndex.map({
       case ((name, typ), idx) =>
-        q"""val ${TermName(name)} = (${hiveTypeToUdfInspector(typ)}.getPrimitiveJavaObject(_parameters(${Literal(
-          Constant(idx))}).get()) match {
+        q"""val ${TermName(name)} = (_parameters(${Literal(Constant(idx))}).get().asInstanceOf[AnyRef] match {
               case ..${primitiveMatchers(typ)}
             }).asInstanceOf[${hiveTypeMapping.convertHiveTypeToScalaType(typ)}]
          """
@@ -116,7 +121,7 @@ class UDFMapping[C <: whitebox.Context](val c: C) {
        override def evaluate(_parameters: Array[DeferredObject]): AnyRef = {
          ..$parameterAccessors
 
-         ($body).asInstanceOf[AnyRef]
+         ($body).asInstanceOf[${hiveTypeMapping.convertHiveTypeToScalaType(udf.returnType)}].asInstanceOf[AnyRef]
        }
      }
     """

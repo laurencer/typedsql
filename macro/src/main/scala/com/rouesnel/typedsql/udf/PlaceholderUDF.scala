@@ -1,16 +1,18 @@
 package com.rouesnel.typedsql.udf
 
-import argonaut._, Argonaut._
+import argonaut._
+import Argonaut._
 
 import com.rouesnel.typedsql.core._
 
-import org.apache.hadoop.hive.ql.exec.UDFArgumentTypeException
+import org.apache.hadoop.hive.ql.exec._
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDF
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDF.DeferredObject
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory
 
-import scalaz._, Scalaz._
+import scalaz._
+import Scalaz._
 
 object UdfDescription {
 
@@ -58,13 +60,32 @@ abstract class PlaceholderUDF(val placeholderIndex: Int) extends GenericUDF {
           }
       })
 
+    if (arguments.size != description.arguments.size) {
+      throw new UDFArgumentLengthException(
+        s"Wrong number of arguments provided (received ${arguments.size} but expected ${description.arguments.size})")
+    }
+
     description.returnType match {
       case pt: PrimitiveType =>
         pt match {
+          case BooleanType =>
+            PrimitiveObjectInspectorFactory.javaBooleanObjectInspector
+          case TinyIntType =>
+            PrimitiveObjectInspectorFactory.javaByteObjectInspector
+          case ShortType =>
+            PrimitiveObjectInspectorFactory.javaShortObjectInspector
           case IntType =>
             PrimitiveObjectInspectorFactory.javaIntObjectInspector
+          case LongType =>
+            PrimitiveObjectInspectorFactory.javaLongObjectInspector
+          case FloatType =>
+            PrimitiveObjectInspectorFactory.javaFloatObjectInspector
+          case DoubleType =>
+            PrimitiveObjectInspectorFactory.javaDoubleObjectInspector
           case StringType =>
             PrimitiveObjectInspectorFactory.javaStringObjectInspector
+          case DateType =>
+            PrimitiveObjectInspectorFactory.javaDateObjectInspector
         }
       case other =>
         throw new UDFArgumentTypeException(0, s"Unsupported return type: ${other.hiveType}")
@@ -80,8 +101,15 @@ abstract class PlaceholderUDF(val placeholderIndex: Int) extends GenericUDF {
     description.returnType match {
       case pt: PrimitiveType =>
         pt match {
-          case IntType    => 0: java.lang.Integer
-          case StringType => ""
+          case BooleanType => Boolean.box(false): java.lang.Boolean
+          case TinyIntType => Byte.box(0): java.lang.Byte
+          case ShortType   => Short.box(0): java.lang.Short
+          case IntType     => Int.box(0): java.lang.Integer
+          case LongType    => Long.box(0): java.lang.Long
+          case FloatType   => Float.box(0): java.lang.Float
+          case DoubleType  => Double.box(0): java.lang.Double
+          case DateType    => new java.sql.Date(0)
+          case StringType  => ""
         }
       case other =>
         throw new UDFArgumentTypeException(0, s"Unsupported return type: ${other.hiveType}")

@@ -100,7 +100,7 @@ class ScroogeGenerator[Context <: whitebox.Context](val c: Context) {
           case DoubleType        => tq"Double"
           case StringType        => tq"String"
           case BooleanType       => tq"Boolean"
-          case DateType          => tq"java.util.Date"
+          case DateType          => tq"java.sql.Date"
           case DecimalType(_, _) => tq"java.math.BigDecimal"
         }
       case ArrayType(valueType) =>
@@ -174,6 +174,13 @@ class ScroogeGenerator[Context <: whitebox.Context](val c: Context) {
   /** Generates the method for reading the particular field value. */
   def readerForType(structNamer: StructType => TypeName, hiveType: HiveType): Tree =
     hiveType match {
+      case DateType =>
+        q"""
+            val daysSinceEpoch = _iprot.${TermName("read" + DateType.thriftTypeName.toLowerCase.capitalize)}
+            val millis = org.apache.hadoop.hive.serde2.io.DateWritable.daysToMillis(daysSinceEpoch)
+            new java.sql.Date(millis)
+         """
+      case FloatType => q"_iprot.readDouble().toFloat"
       case p: PrimitiveType =>
         q"_iprot.${TermName("read" + p.thriftTypeName.toLowerCase.capitalize)}"
       case m: MapType =>
@@ -220,7 +227,7 @@ class ScroogeGenerator[Context <: whitebox.Context](val c: Context) {
               case LongType          => q"0L"
               case FloatType         => q"0.0f"
               case DoubleType        => q"0.0"
-              case DateType          => q"new java.util.Date()"
+              case DateType          => q"new java.sql.Date(0)"
               case DecimalType(_, _) => q"new java.math.BigDecimal()"
               case StringType        => q""" "" """
             }

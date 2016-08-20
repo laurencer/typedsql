@@ -1,6 +1,5 @@
 package com.rouesnel.typedsql
 
-
 object SqlParameter {
   def write[T](value: T)(implicit writer: SqlParameter[T]) =
     writer.write(value)
@@ -24,7 +23,7 @@ object SqlParameter {
 
 /** Typeclass that represent a type that can be used as a parameter to interpolate into
   * a Hive query.
- *
+  *
   * @param write function to interpolate/escape the value.
   * @tparam T type of value to interpolate.
   */

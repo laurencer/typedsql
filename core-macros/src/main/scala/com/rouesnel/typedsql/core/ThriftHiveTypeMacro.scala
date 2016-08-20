@@ -19,7 +19,7 @@ class ThriftHiveTypeMacro[C <: Context](val c: C) {
   val booleanType    = c.weakTypeOf[Boolean]
   val doubleType     = c.weakTypeOf[Double]
   val stringType     = c.weakTypeOf[String]
-  val dateType       = c.weakTypeOf[java.util.Date]
+  val dateType       = c.weakTypeOf[java.sql.Date]
   val shortType      = c.weakTypeOf[Short]
   val byteType       = c.weakTypeOf[Byte]
   val floatType      = c.weakTypeOf[Float]

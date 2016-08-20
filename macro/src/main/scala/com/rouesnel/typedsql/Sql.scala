@@ -230,6 +230,9 @@ object SqlQuery {
       }
     }
 
+    // Output the generated code to the target/typedsql directory.
+    PersistGeneratedMacroCode[c.type](c)(result.toString)
+
     c.Expr[Any](result)
   }
 }
