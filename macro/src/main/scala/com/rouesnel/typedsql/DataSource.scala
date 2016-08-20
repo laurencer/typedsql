@@ -16,7 +16,7 @@ import au.com.cba.omnia.beeswax.Hive
 import au.com.cba.omnia.ebenezer.scrooge.ParquetScroogeSource
 import au.com.cba.omnia.omnitool._
 import au.com.cba.omnia.permafrost.hdfs.Hdfs
-import com.rouesnel.typedsql.core.StructType
+import com.rouesnel.typedsql.core._
 import org.apache.commons.logging.LogFactory
 import org.apache.hadoop.util.GenericOptionsParser
 

@@ -175,8 +175,8 @@ object SqlQuery {
             def sql: String = ${Literal(Constant(sqlStatement))}
 
             def query(...${queryParams}): com.rouesnel.typedsql.HiveQueryDataSource[Row] = {
-             implicit def hasStructType: com.rouesnel.typedsql.HasStructType[Row] =
-               com.rouesnel.typedsql.HasStructType[Row](com.rouesnel.typedsql.core.HiveType.parseHiveType(${Literal(Constant(outputRecord.hiveType))}).toOption.get.asInstanceOf[com.rouesnel.typedsql.core.StructType])
+             implicit def hasStructType: com.rouesnel.typedsql.core.HasStructType[Row] =
+               com.rouesnel.typedsql.core.HasStructType[Row](com.rouesnel.typedsql.core.HiveType.parseHiveType(${Literal(Constant(outputRecord.hiveType))}).toOption.get.asInstanceOf[com.rouesnel.typedsql.core.StructType])
              com.rouesnel.typedsql.HiveQueryDataSource[Row](
                sql,
                ${readParametersAsMap(parameters.keys)},

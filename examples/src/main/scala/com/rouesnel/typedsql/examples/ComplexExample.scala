@@ -1,7 +1,7 @@
 package com.rouesnel.typedsql.examples
 
 import com.rouesnel.typedsql.DataSource.Strategy._
-import com.rouesnel.typedsql.{DataSource, SqlQuery, ThriftStructType, TypedPipeDataSource}
+import com.rouesnel.typedsql._, core._
 import com.twitter.scalding._
 import org.apache.commons.configuration.Configuration
 import org.apache.hadoop.hive.conf.HiveConf
@@ -22,7 +22,6 @@ object ComplexExampleApp extends ExecutionApp {
   val log = LoggerFactory.getLogger(getClass)
 
   def job = Execution.getConfigMode.flatMap({ case (appConfig, Hdfs(_, conf)) => {
-    log.info(ThriftStructType[ComplexValue].hiveType)
     val source: DataSource[ComplexValue] =
       TypedPipeDataSource(
         TypedPipe.from(

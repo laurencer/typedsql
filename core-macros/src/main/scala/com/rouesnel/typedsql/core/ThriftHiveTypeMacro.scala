@@ -1,6 +1,4 @@
-package com.rouesnel.typedsql
-
-import com.rouesnel.typedsql.core._
+package com.rouesnel.typedsql.core
 
 import com.twitter.scrooge.ThriftStruct
 
@@ -8,41 +6,11 @@ import scala.reflect.macros._
 
 import scala.collection.immutable.ListMap
 
-
-object GenerateHiveType {
-  def apply[T] = macro impl[T]
-
-  def impl[T](c: Context)(implicit typ: c.WeakTypeTag[T]): c.Expr[HiveType] = {
-    import c.universe._
-
-    val hiveType = new ThriftHiveTypeMacro[c.type](c)
-      .convertScalaToHiveType(c.weakTypeOf[T])
-
-    c.Expr[HiveType](
-      q"com.rouesnel.typedsql.core.HiveType.parseHiveType(${Literal(Constant(hiveType.hiveType))}).toOption.get"
-    )
-  }
-}
-
-object ThriftStructType {
-  def apply[T <: ThriftStruct] = macro impl[T]
-
-  def impl[T](c: Context)(implicit typ: c.WeakTypeTag[T]): c.Expr[StructType] = {
-    import c.universe._
-
-    val hiveType = new ThriftHiveTypeMacro[c.type](c)
-      .convertScalaToHiveType(c.weakTypeOf[T])
-
-    c.Expr[StructType](
-      q"com.rouesnel.typedsql.core.HiveType.parseHiveType(${Literal(Constant(hiveType.hiveType))}).toOption.get.asInstanceOf[com.rouesnel.typedsql.core.StructType]"
-    )
-  }
-}
-
 class ThriftHiveTypeMacro[C <: Context](val c: C) {
   import c.universe._
   def listMap[K, V](els: Seq[(K, V)]): ListMap[K, V] = ListMap(els: _*)
 
+  // List of all the Scala types that map to Hive typess
   val seqType       = c.weakTypeOf[Seq[_]]
   val mapType       = c.weakTypeOf[scala.collection.Map[_, _]]
   val intType       = c.weakTypeOf[Int]
@@ -88,19 +56,19 @@ class ThriftHiveTypeMacro[C <: Context](val c: C) {
   }
 
   def convertHiveTypeToScalaType(hiveType: HiveType): c.Type = hiveType match {
-    case BooleanType  => booleanType
-    case DoubleType   => doubleType
-    case IntType      => intType
-    case FloatType    => floatType
-    case LongType     => longType
-    case ShortType    => shortType
-    case TinyIntType  => byteType
-    case DateType     => dateType
-    case StringType   => stringType
-    case _: DecimalType => bigDecimalType
+    case BooleanType         => booleanType
+    case DoubleType          => doubleType
+    case IntType             => intType
+    case FloatType           => floatType
+    case LongType            => longType
+    case ShortType           => shortType
+    case TinyIntType         => byteType
+    case DateType            => dateType
+    case StringType          => stringType
+    case _: DecimalType      => bigDecimalType
     case MapType(key, value) => tq"scala.collection.Map[${convertHiveTypeToScalaType(key)}, ${convertHiveTypeToScalaType(value)}]".tpe
     case ArrayType(value)    => tq"scala.collection.Seq[${convertHiveTypeToScalaType(value)}]".tpe
-    case StructType(_) => c.abort(c.enclosingPosition, "Struct/complex types are not supported.")
+    case StructType(_)       => c.abort(c.enclosingPosition, "Struct/complex types are not supported.")
   }
 
   /** Converts a Scrooge struct type to a Hive type */

@@ -2,7 +2,7 @@ package com.rouesnel.typedsql
 
 import au.com.cba.omnia.beeswax._
 import au.com.cba.omnia.omnitool.Result
-import com.rouesnel.typedsql.core.{HiveType, StructType}
+import com.rouesnel.typedsql.core._
 
 import scala.collection.JavaConversions._
 import scala.collection.convert.decorateAsScala._
