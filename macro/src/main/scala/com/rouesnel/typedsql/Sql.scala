@@ -90,9 +90,11 @@ object SqlQuery {
                 .mkString(", ")}")
           }
 
+          val cacheLogger = (msg: String) => c.info(c.enclosingPosition, msg, false)
+
           val outputRecordFields =
             HiveCache
-              .cached(hiveConf, sources, parameters, udfDescriptions, sqlStatement)(schema => {
+              .cached(hiveConf, sources, parameters, udfDescriptions, sqlStatement, cacheLogger)(schema => {
                 Option(schema)
                   .map(_.getFieldSchemas.asScala
                     .map(fieldSchema => {

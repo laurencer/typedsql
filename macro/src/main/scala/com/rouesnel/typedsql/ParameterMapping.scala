@@ -34,9 +34,9 @@ class ParameterMapping(c: whitebox.Context) {
             case typ if (typ <:< intType)    => "0"
             case typ if (typ <:< stringType) => "\"\""
             case other => {
-              println(
+              c.abort(
+                c.enclosingPosition,
                 s"Encountered unknown SqlParameter[${objectType}] - using an empty string as a placeholder value...")
-              "\"\""
             }
           }
 

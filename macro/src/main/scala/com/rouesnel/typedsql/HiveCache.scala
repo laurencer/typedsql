@@ -64,7 +64,8 @@ object HiveCache {
              sources: Map[String, StructType],
              parameterVariables: Map[String, String],
              udfs: List[UdfDescription],
-             query: String)(
+             query: String,
+             logger: String => Unit)(
       f: Schema => List[(String, HiveType)]): Throwable \/ List[(String, HiveType)] =
     \/.fromTryCatchNonFatal {
       val request        = Request(sources, parameterVariables, udfs, query)
@@ -81,10 +82,13 @@ object HiveCache {
       // Create the path to the cached directory.
       val cachedFile =
         new java.io.File(typedSqlDir, s"cache_${hashedRequest.toString.replace("-", "0")}.json")
-      println(cachedFile)
 
+      logger(s"Looking for cached query schema at ${cachedFile}")
+
+      // Try read the file if it exists. If reading fails or something else happens
+      // fall back to generating from scratch.
       val cachedRead = if (cachedFile.exists()) {
-        println("Cached file exists - reusing existing result.")
+        logger("Cached file exists - reusing existing result.")
         \/.fromTryCatchNonFatal(
             scala.io.Source
               .fromFile(cachedFile)
@@ -96,7 +100,7 @@ object HiveCache {
           .flatMap(identity)
           .fold(
             ex => {
-              println(s"Error reading: ${cachedFile}\n${ExceptionString(ex)}")
+              logger(s"Error reading cached query schema : ${cachedFile}\n${ExceptionString(ex)}")
               None
             },
             data => Some(data.compiledSchema)
@@ -108,7 +112,7 @@ object HiveCache {
       cachedRead match {
         case Some(schema) => schema
         case None => {
-          println("No cache exists for Hive query - evaluating...")
+          logger("No cache exists for Hive query - evaluating...")
           val compiled = HiveQuery
             .compileQuery(driver, hiveConf, sources, parameterVariables, udfs, query)
             .fold(ex => throw ex, identity)
@@ -134,13 +138,14 @@ object HiveCache {
              sources: Map[String, StructType],
              parameterVariables: Map[String, String],
              udfs: List[UdfDescription],
-             query: String)(
+             query: String,
+             logger: String => Unit)(
       f: Schema => List[(String, HiveType)]): Throwable \/ List[(String, HiveType)] =
     HiveSupport.useHiveClassloader {
       \/.fromTryCatchNonFatal(new Driver(hiveConf))
         .flatMap(driver => {
           val result =
-            cached(driver, hiveConf, sources, parameterVariables, udfs, query)(f)
+            cached(driver, hiveConf, sources, parameterVariables, udfs, query, logger)(f)
           driver.close()
           driver.destroy()
           result
