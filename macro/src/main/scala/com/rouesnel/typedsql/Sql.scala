@@ -59,7 +59,7 @@ object SqlQuery {
             case _                                               => true
           })
 
-          val sqlStatement = sqlLiteral.toString.trim.replaceAll("\\n", " ")
+          val sqlStatement = sqlLiteral.toString.trim
           if (sqlStatement.split(";").length != 1) {
             c.abort(
               c.enclosingPosition,

@@ -16,13 +16,13 @@ object SqlQueryExample {
     """
       SELECT 1 as int_value,
             1.3 as double_value,
-            "string" as string_value,
+            "string" as string_value, -- sql comments work properly
             map("key", 1.0, "key2", 2) as map_value,
             struct(1.0, "stringvalue", 0) as struct_value,
             named_struct("field_name", 1, "field2", 2) as named_struct_value,
             cast(1 as boolean) as boolean_value,
             cast(1 as tinyint) as tiny_int_value,
-            cast(1 as smallint) as small_int_value,
+            cast(1 as smallint) as small_int_value, -- example comment
             myUdf(5) as udf_applied
       FROM ${people}
       WHERE age > ${minimumAge}
