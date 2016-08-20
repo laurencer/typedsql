@@ -73,7 +73,7 @@ object HiveCache {
         scala.util.hashing.MurmurHash3.bytesHash(pickledRequest)
 
       // Get the TypedSQL directory.
-      val currentDir  = new java.io.File(".").getAbsoluteFile
+      val currentDir  = new java.io.File("").getAbsoluteFile
       val targetDir   = new java.io.File(currentDir, "target")
       val typedSqlDir = new java.io.File(targetDir, "typedsql")
       typedSqlDir.mkdirs()
@@ -82,7 +82,7 @@ object HiveCache {
       val cachedFile =
         new java.io.File(typedSqlDir, s"cache_${hashedRequest.toString.replace("-", "0")}.json")
 
-      logger(s"Looking for cached query schema at ${cachedFile}")
+      logger(s"Looking for cached query schema at ${cachedFile.getAbsolutePath}")
 
       // Try read the file if it exists. If reading fails or something else happens
       // fall back to generating from scratch.
