@@ -6,6 +6,8 @@ import com.rouesnel.typedsql.udf._
 
 import scala.reflect.api.Trees
 import scala.reflect.macros.whitebox
+import scala.util.Random
+import scala.util.hashing.MurmurHash3
 
 class UDFMapping[C <: whitebox.Context](val c: C) {
   import c.universe._
@@ -53,7 +55,7 @@ class UDFMapping[C <: whitebox.Context](val c: C) {
     case ShortType =>
       List(
         cq"iw: org.apache.hadoop.io.ShortWritable => iw.get()",
-      cq"iw: org.apache.hadoop.hive.serde2.io.ShortWritable => iw.get()"
+        cq"iw: org.apache.hadoop.hive.serde2.io.ShortWritable => iw.get()"
       )
     case IntType =>
       List(
@@ -74,7 +76,7 @@ class UDFMapping[C <: whitebox.Context](val c: C) {
         cq"iw: org.apache.hadoop.io.FloatWritable  => iw.get()",
         cq"iw: org.apache.hadoop.io.DoubleWritable => iw.get()",
         cq"iw: org.apache.hadoop.hive.serde2.io.DoubleWritable => iw.get()"
-  )
+      )
     case DateType =>
       List(
         cq"date: java.sql.Date => date",
@@ -84,7 +86,8 @@ class UDFMapping[C <: whitebox.Context](val c: C) {
       List(
         cq"str: AnyRef => str.toString"
       )
-    case other => c.abort(c.enclosingPosition, s"${other.hiveType} is not yet supported for UDF parameters.")
+    case other =>
+      c.abort(c.enclosingPosition, s"${other.hiveType} is not yet supported for UDF parameters.")
   }
 
   private def generateUdf(udf: UdfDescription, body: Tree): Tree = {
@@ -129,7 +132,8 @@ class UDFMapping[C <: whitebox.Context](val c: C) {
     generatedUdf
   }
 
-  def readUDFs(objectBody: Seq[Trees#Tree]): List[(UdfDescription, Tree)] = {
+  def readUDFs(enclosingObjectName: String,
+               objectBody: Seq[Trees#Tree]): List[(UdfDescription, Tree)] = {
     objectBody
       .collect({
         case q"$mods def $tname(..${ paramss }): $tpt = $expr" =>
@@ -145,7 +149,9 @@ class UDFMapping[C <: whitebox.Context](val c: C) {
                   .typecheck(typ, c.TYPEmode)
                   .tpe =:= c.typecheck(tq"com.rouesnel.typedsql.UDF", c.TYPEmode).tpe => {
               (tname, paramss, tpt)
+
               val description = udf.UdfDescription(
+                s"${tname.toString()}_${MurmurHash3.stringHash(enclosingObjectName).toString.replace('-', '0')}",
                 tname.toString(),
                 paramss
                   .map({

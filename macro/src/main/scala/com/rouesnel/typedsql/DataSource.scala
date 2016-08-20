@@ -17,8 +17,9 @@ import au.com.cba.omnia.ebenezer.scrooge.ParquetScroogeSource
 import au.com.cba.omnia.omnitool._
 import au.com.cba.omnia.permafrost.hdfs.Hdfs
 import com.rouesnel.typedsql.core._
-import com.rouesnel.typedsql.hive.HiveMetadataTable
+import com.rouesnel.typedsql.hive.{HiveMetadataTable, QueryRewriter}
 import org.apache.commons.logging.LogFactory
+import org.apache.hadoop.hive.ql.parse.VariableSubstitution
 import org.apache.hadoop.util.GenericOptionsParser
 
 import scala.util.Random
@@ -411,7 +412,7 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType](
     query: String,
     parameters: Map[String, String],
     sources: Map[String, DataSource[_]],
-    udfs: Map[String, Class[GenericUDF]],
+    udfs: Map[(String, String), Class[GenericUDF]],
     partitions: List[(String, String)] = Nil,
     hiveViewName: Option[String] = None,
     hiveTableName: Option[String] = None,
@@ -423,6 +424,13 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType](
   def manifest: Manifest[T] = implicitly[Manifest[T]]
 
   def hasStructType: HasStructType[T] = implicitly[HasStructType[T]]
+
+  def getUpstreamUdfs(): Map[(String, String), Class[GenericUDF]] =
+    sources
+      .collect({
+        case (_, hqds: HiveQueryDataSource[_]) => hqds.udfs
+      })
+      .fold(Map.empty)(_ ++ _)
 
   def toHiveView(config: DataSource.Config): Execution[HiveView[T]] =
     Execution
@@ -467,14 +475,21 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType](
                   s"Error creating database ${databaseName}. ${resp.getErrorMessage}")
               })
 
-            udfs.toList.map({
-              case (name, clazz) => FunctionRegistry.registerTemporaryGenericUDF(name, clazz)
+            // Interpolate any variables needed (so it can be parsed correctly).
+            val interpolatedQuery = new VariableSubstitution().substitute(config.conf, query)
+
+            // Maps the UDF names to ids instead so they are unique.
+            val mappedQuery = QueryRewriter
+              .replaceFunctionInvocations(interpolatedQuery, config.conf, udfs.keys.toMap)
+
+            (udfs ++ getUpstreamUdfs).toList.map({
+              case ((name, id), clazz) => FunctionRegistry.registerTemporaryGenericUDF(id, clazz)
             })
 
             val createQuery =
               s"""
              |CREATE VIEW ${viewName}
-             |AS ${query}
+             |AS ${mappedQuery}
           """.stripMargin
 
             val response = driver.run(createQuery)
@@ -539,8 +554,15 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType](
                   s"Error creating database ${databaseName}. ${resp.getErrorMessage}")
               })
 
-            udfs.toList.map({
-              case (name, clazz) => FunctionRegistry.registerTemporaryGenericUDF(name, clazz)
+            // Interpolate any variables needed (so it can be parsed correctly).
+            val interpolatedQuery = new VariableSubstitution().substitute(config.conf, query)
+
+            // Maps the UDF names to ids instead so they are unique.
+            val mappedQuery = QueryRewriter
+              .replaceFunctionInvocations(interpolatedQuery, config.conf, udfs.keys.toMap)
+
+            (udfs ++ getUpstreamUdfs).toList.map({
+              case ((name, id), clazz) => FunctionRegistry.registerTemporaryGenericUDF(id, clazz)
             })
 
             val absolutePath = Hdfs
@@ -559,7 +581,7 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType](
              |        STORED AS PARQUET
              |        LOCATION '${absolutePath}'
              |        TBLPROPERTIES ('PARQUET.COMPRESS'='SNAPPY')
-             |        AS ${query}
+             |        AS ${mappedQuery}
           """.stripMargin
             val response = driver.run(createQuery)
             if (response.getResponseCode() != 0)

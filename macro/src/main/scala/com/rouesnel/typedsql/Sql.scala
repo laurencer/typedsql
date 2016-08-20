@@ -75,8 +75,11 @@ object SqlQuery {
           // Get/parse the remaining parameters.
           val parameters = parameterMapping.readParameters(nonSourceParameters)
 
+          // Generate the fullly qualified name of this object (used to uniquely identify UDFs)
+          val objectName = c.internal.enclosingOwner.fullName + "." + tpname.toString()
+
           // Get any UDFs.
-          val udfs = udfMapping.readUDFs(stats)
+          val udfs = udfMapping.readUDFs(objectName, stats)
           val udfDescriptions = udfs.map({
             case (description, _) => description
           })
@@ -194,8 +197,8 @@ object SqlQuery {
           }
 
           def createUdfMap() = {
-            val literals = udfDescriptions.toList.map(udf => {
-              q"${Literal(Constant(udf.name))} -> classOf[${TypeName("UDF_" + udf.name)}].asInstanceOf[Class[org.apache.hadoop.hive.ql.udf.generic.GenericUDF]]"
+            val literals = udfDescriptions.map(udf => {
+              q"(${Literal(Constant(udf.name))}, ${Literal(Constant(udf.id))}) -> classOf[${TypeName("UDF_" + udf.name)}].asInstanceOf[Class[org.apache.hadoop.hive.ql.udf.generic.GenericUDF]]"
             })
             q"Map(..${literals})"
           }

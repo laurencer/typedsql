@@ -176,7 +176,8 @@ class ScroogeGenerator[Context <: whitebox.Context](val c: Context) {
     hiveType match {
       case DateType =>
         q"""
-            val daysSinceEpoch = _iprot.${TermName("read" + DateType.thriftTypeName.toLowerCase.capitalize)}
+            val daysSinceEpoch = _iprot.${TermName(
+          "read" + DateType.thriftTypeName.toLowerCase.capitalize)}
             val millis = org.apache.hadoop.hive.serde2.io.DateWritable.daysToMillis(daysSinceEpoch)
             new java.sql.Date(millis)
          """

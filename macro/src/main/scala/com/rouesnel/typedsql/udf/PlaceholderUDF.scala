@@ -26,7 +26,8 @@ object UdfDescription {
     )("hive_type")
 
   implicit def jsonCodec =
-    casecodec3(UdfDescription.apply _, UdfDescription.unapply _)(
+    casecodec4(UdfDescription.apply _, UdfDescription.unapply _)(
+      "id",
       "name",
       "arguments",
       "return_type"
@@ -34,6 +35,9 @@ object UdfDescription {
 }
 
 case class UdfDescription(
+    /** Uniquely identifies the UDF in this compilation context (generated) */
+    id: String,
+    /** Method name that was associated with this UDF */
     name: String,
     arguments: List[(String, HiveType)],
     returnType: HiveType

@@ -5,19 +5,27 @@ import com.rouesnel.typedsql._
 @SqlQuery
 object UdfExample {
 
-  @UDF def myUdf(bool: Boolean, tinyInt: Byte, short: Short, int: Int, long: Long, float: Float,
-                 double: Double, date: java.sql.Date, string: String): String =
+  @UDF
+  def myUdf(bool: Boolean,
+            tinyInt: Byte,
+            short: Short,
+            int: Int,
+            long: Long,
+            float: Float,
+            double: Double,
+            date: java.sql.Date,
+            string: String): String =
     s"${bool} ${tinyInt} ${short} ${int} ${long} ${float} ${double} ${date} ${string}"
 
-  @UDF def testBoolean(): Boolean = false
-  @UDF def testByte(): Byte = 0
-  @UDF def testShort(): Short = 0
-  @UDF def testInt(): Int = 0
-  @UDF def testLong(): Long = 0
-  @UDF def testFloat(): Float = 0.0F
-  @UDF def testDouble(): Double = 0.0
+  @UDF def testBoolean(): Boolean    = false
+  @UDF def testByte(): Byte          = 0
+  @UDF def testShort(): Short        = 0
+  @UDF def testInt(): Int            = 0
+  @UDF def testLong(): Long          = 0
+  @UDF def testFloat(): Float        = 0.0F
+  @UDF def testDouble(): Double      = 0.0
   @UDF def testDate(): java.sql.Date = new java.sql.Date(115, 3, 16)
-  @UDF def testString(): String = ""
+  @UDF def testString(): String      = ""
 
   def query =
     """
