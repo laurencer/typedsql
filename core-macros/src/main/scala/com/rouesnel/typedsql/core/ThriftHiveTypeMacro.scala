@@ -1,30 +1,15 @@
 package com.rouesnel.typedsql.core
 
-import com.twitter.scrooge.ThriftStruct
-
 import scala.reflect.macros._
 
 import scala.collection.immutable.ListMap
 
 class ThriftHiveTypeMacro[C <: Context](val c: C) {
+  val scalaTypes = new ScalaHiveTypeMapping[c.type](c)
   import c.universe._
-  def listMap[K, V](els: Seq[(K, V)]): ListMap[K, V] = ListMap(els: _*)
+  import scalaTypes._
 
-  // List of all the Scala types that map to Hive typess
-  val seqType        = c.weakTypeOf[Seq[_]]
-  val mapType        = c.weakTypeOf[scala.collection.Map[_, _]]
-  val intType        = c.weakTypeOf[Int]
-  val longType       = c.weakTypeOf[scala.Long]
-  val javaLongType   = c.weakTypeOf[java.lang.Long]
-  val booleanType    = c.weakTypeOf[Boolean]
-  val doubleType     = c.weakTypeOf[Double]
-  val stringType     = c.weakTypeOf[String]
-  val dateType       = c.weakTypeOf[java.sql.Date]
-  val shortType      = c.weakTypeOf[Short]
-  val byteType       = c.weakTypeOf[Byte]
-  val floatType      = c.weakTypeOf[Float]
-  val bigDecimalType = c.weakTypeOf[java.math.BigDecimal]
-  val thriftType     = c.weakTypeOf[ThriftStruct]
+  def listMap[K, V](els: Seq[(K, V)]): ListMap[K, V] = ListMap(els: _*)
 
   /** Converts a Scala type to a Hive type */
   def convertScalaToHiveType(tpe: Type): HiveType = tpe match {

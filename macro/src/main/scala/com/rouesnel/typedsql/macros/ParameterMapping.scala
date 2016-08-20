@@ -1,14 +1,15 @@
 package com.rouesnel.typedsql.macros
 
-import scala.reflect.api.Trees
-import scala.reflect.macros.{TypecheckException, whitebox}
+import com.rouesnel.typedsql.core.ScalaHiveTypeMapping
 
-class ParameterMapping(c: whitebox.Context) {
+import scala.reflect.api.Trees
+import scala.reflect.macros._
+
+class ParameterMapping[C <: Context](val c: C) {
   import c.universe._
 
-  private val intType    = c.weakTypeOf[Int]
-  private val doubleType = c.weakTypeOf[Double]
-  private val stringType = c.weakTypeOf[String]
+  val scalaTypes = new ScalaHiveTypeMapping[c.type](c)
+  import scalaTypes._
 
   type FieldName    = String
   type DefaultValue = String
@@ -30,9 +31,15 @@ class ParameterMapping(c: whitebox.Context) {
           }
 
           val defaultValue = tpe match {
-            case typ if (typ <:< doubleType) => "0.0"
-            case typ if (typ <:< intType)    => "0"
-            case typ if (typ <:< stringType) => "\"\""
+            case typ if (typ <:< booleanType) => "false"
+            case typ if (typ <:< byteType)    => "0"
+            case typ if (typ <:< shortType)   => "0"
+            case typ if (typ <:< intType)     => "0"
+            case typ if (typ <:< longType)    => "0"
+            case typ if (typ <:< floatType)   => "0.0"
+            case typ if (typ <:< doubleType)  => "0.0"
+            case typ if (typ <:< dateType)    => "cast('2015-05-11' as date)"
+            case typ if (typ <:< stringType)  => "\"\""
             case other => {
               c.abort(
                 c.enclosingPosition,

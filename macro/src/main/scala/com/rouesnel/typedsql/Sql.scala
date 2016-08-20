@@ -31,7 +31,7 @@ object SqlQuery {
   def impl(c: whitebox.Context)(annottees: c.Expr[Any]*): c.Expr[Any] = {
     import c.universe._
     val sourceMapping    = new SourceMapping(c)
-    val parameterMapping = new ParameterMapping(c)
+    val parameterMapping = new ParameterMapping[c.type](c)
     val udfMapping       = new UDFMapping[c.type](c)
 
     val result = {
