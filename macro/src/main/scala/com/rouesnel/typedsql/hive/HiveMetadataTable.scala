@@ -30,9 +30,8 @@ object HiveMetadataTable {
   /** While the earlier operations failed with exception from with the cascading-hive code,
     * we need to deal with failure via `Result`
     */
-  def apply[T <: ThriftStruct: HasStructType](database: String,
+  def apply[T <: ThriftStruct: HasStructType, P : Partitions](database: String,
                                               tableName: String,
-                                              partitionColumns: List[(String, String)],
                                               location: Option[Path] = None)(
       implicit m: Manifest[T])
     : MetadataTable = { // This operation could fail so type should convey it
@@ -43,12 +42,12 @@ object HiveMetadataTable {
       fieldSchema(c._1, c._2.hiveType)
     }
 
-    val partitionFieldSchemas = partitionColumns.map {
-      case (n, t) => fieldSchema(n, t)
+    val partitionFieldSchemas = implicitly[Partitions[P]].fields.map {
+      case (n, t) => fieldSchema(n, t.hiveType)
     }
 
     assert(
-      partitionColumns.map(_._1).toSet.intersect(structType.fields.map(_._1).toSet).isEmpty,
+      implicitly[Partitions[P]].fields.map(_._1).toSet.intersect(structType.fields.map(_._1).toSet).isEmpty,
       "Partition columns must be different from the fields in the thrift struct"
     )
 
@@ -77,10 +76,9 @@ object HiveMetadataTable {
   def fieldSchema(n: String, t: String) =
     new FieldSchema(n, t, "Created by Ebenezer")
 
-  def createTable[T <: ThriftStruct: Manifest: HasStructType](
+  def createTable[T <: ThriftStruct: Manifest: HasStructType, P: Partitions](
       database: String,
       table: String,
-      partitionColumns: List[(String, String)],
       location: Option[Path] = None): Hive[Boolean] = {
     Hive
       .createDatabase(database)
@@ -89,7 +87,7 @@ object HiveMetadataTable {
         if (exists)
           Hive
             .mandatory(
-              existsTableStrict[T](database, table, partitionColumns, location),
+              existsTableStrict[T, P](database, table, location),
               s"$database.$table already exists but has different schema."
             )
             .map(_ => false)
@@ -99,7 +97,7 @@ object HiveMetadataTable {
               val fqLocation =
                 location.map(FileSystem.get(conf).makeQualified(_))
               val metadataTable =
-                HiveMetadataTable[T](database, table, partitionColumns, fqLocation)
+                HiveMetadataTable[T, P](database, table, fqLocation)
 
               try {
                 client.createTable(metadataTable)
@@ -108,7 +106,7 @@ object HiveMetadataTable {
                 case _: AlreadyExistsException =>
                   Hive
                     .mandatory(
-                      existsTableStrict[T](database, table, partitionColumns, location),
+                      existsTableStrict[T, P](database, table, location),
                       s"$database.$table already exists but has different schema."
                     )
                     .map(_ => false)
@@ -121,19 +119,17 @@ object HiveMetadataTable {
       })
   }
 
-  def existsTableStrict[T <: ThriftStruct: Manifest: HasStructType](
+  def existsTableStrict[T <: ThriftStruct: Manifest: HasStructType, P : Partitions](
       database: String,
       table: String,
-      partitionColumns: List[(String, String)],
       location: Option[Path]): Hive[Boolean] =
     Hive((conf, client) =>
       try {
         val fs          = FileSystem.get(conf)
         val actualTable = client.getTable(database, table)
         val expectedTable =
-          HiveMetadataTable[T](database,
+          HiveMetadataTable[T, P](database,
                                table,
-                               partitionColumns,
                                location.map(fs.makeQualified(_)))
         val actualCols = actualTable.getSd.getCols.asScala
           .map(c => (c.getName.toLowerCase, c.getType.toLowerCase))
