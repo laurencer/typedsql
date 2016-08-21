@@ -16,7 +16,7 @@ import com.rouesnel.typedsql.macros.{ParameterMapping, ScroogeGenerator, SourceM
 import com.rouesnel.typedsql.util._
 
 @compileTimeOnly("enable macro paradise to expand macro annotations")
-class    SqlQuery extends StaticAnnotation {
+class SqlQuery extends StaticAnnotation {
   def macroTransform(annottees: Any*) = macro SqlQuery.impl
 }
 
@@ -160,30 +160,37 @@ object SqlQuery {
 
           // Handle the optional partition fields
           val partitionsTypeField = stats.collectFirst({
-            case q"type Partitions = $tpt" => new PartitionMapping[c.type](c).readPartitions(c.typecheck(tpt, c.TYPEmode).tpe)
+            case q"type Partitions = $tpt" =>
+              new PartitionMapping[c.type](c).readPartitions(c.typecheck(tpt, c.TYPEmode).tpe)
           })
           val partitions = partitionsTypeField.getOrElse(Nil)
 
           // Report an error if partition fields are the wrong type or missing.
           val intermediateFields = fieldsToGenerate.toMap
-          partitions.foreach({ case (name, typ) => {
-            val matches = intermediateFields
-              .get(name)
-              .map(field => if (field == typ) {
-                \/-(None)
-              } else {
-                -\/(s"the incorrect type. Expected ${typ.hiveType} but field was actually ${field.hiveType}")
-              })
-              .getOrElse(-\/("missing"))
+          partitions.foreach({
+            case (name, typ) => {
+              val matches = intermediateFields
+                .get(name)
+                .map(field =>
+                  if (field == typ) {
+                    \/-(None)
+                  } else {
+                    -\/(
+                      s"the incorrect type. Expected ${typ.hiveType} but field was actually ${field.hiveType}")
+                })
+                .getOrElse(-\/("missing"))
 
-            matches.swap.foreach(error => {
-              c.abort(c.enclosingPosition, s"Partition field ${name} is ${error}")
-            })
-          }})
+              matches.swap.foreach(error => {
+                c.abort(c.enclosingPosition, s"Partition field ${name} is ${error}")
+              })
+            }
+          })
 
           // Filter out any partitioned fields from the struct type.
           val partitionFields = partitions.map(_._1).toSet
-          val fieldsWithoutPartitions = fieldsToGenerate.filter({ case (name, _) => ! partitionFields.contains(name) })
+          val fieldsWithoutPartitions = fieldsToGenerate.filter({
+            case (name, _) => !partitionFields.contains(name)
+          })
 
           // Make the returned row itself a struct for simplicity/elegance.
           val outputRecord = StructType(ListMap(fieldsWithoutPartitions: _*))
@@ -230,7 +237,8 @@ object SqlQuery {
             q"Map(..${literals})"
           }
 
-          val defaultPartitionField = partitionsTypeField.fold[Tree](q"type Partitions = Unit")(_ => q"")
+          val defaultPartitionField =
+            partitionsTypeField.fold[Tree](q"type Partitions = Unit")(_ => q"")
 
           val amendedParents = parents :+ tq"com.rouesnel.typedsql.CompiledSqlQuery"
           q"""$mods object $tpname extends ..$amendedParents {

@@ -120,9 +120,10 @@ object HiveQuery {
     * Taken/inspired by the corresponding functions in [Beeswax](https://github.com/CommBank/beeswax).
     * See https://github.com/CommBank/beeswax/blob/master/src/main/scala/au/com/cba/omnia/beeswax/HiveMetadataTable.scala
     */
-  def createCompilationEnvironment(dbName: String,
-                                   hiveConf: HiveConf,
-                                   sources: Map[String, (StructType, List[(String, HiveType)])]) = {
+  def createCompilationEnvironment(
+      dbName: String,
+      hiveConf: HiveConf,
+      sources: Map[String, (StructType, List[(String, HiveType)])]) = {
     import au.com.cba.omnia.beeswax._
     Hive
       .createDatabase(dbName)
@@ -146,9 +147,13 @@ object HiveQuery {
                   }
                 })
 
-                val partitionFieldSchemas = partitionCols.map({ case (fieldName, fieldType) => {
-                  new FieldSchema(fieldName, fieldType.hiveType, "Table in compilation environment")
-                }})
+                val partitionFieldSchemas = partitionCols.map({
+                  case (fieldName, fieldType) => {
+                    new FieldSchema(fieldName,
+                                    fieldType.hiveType,
+                                    "Table in compilation environment")
+                  }
+                })
 
                 if (partitionFieldSchemas.nonEmpty) {
                   table.setPartitionKeys(partitionFieldSchemas.asJava)

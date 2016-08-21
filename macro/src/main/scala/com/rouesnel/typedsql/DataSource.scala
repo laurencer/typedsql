@@ -52,11 +52,12 @@ object DataSource {
     )
 
   type Strategy[T <: ThriftStruct, P] = (DataSource.Config,
-                                      PersistableSource[T, P]) => Execution[DataSource[T, P]]
+                                         PersistableSource[T, P]) => Execution[DataSource[T, P]]
   object Strategy {
-    def alwaysRefresh[T <: ThriftStruct: Manifest: HasStructType, P: Partitions](name: String,
-                                                                  hiveTable: String,
-                                                                  path: String): Strategy[T, P] =
+    def alwaysRefresh[T <: ThriftStruct: Manifest: HasStructType, P: Partitions](
+        name: String,
+        hiveTable: String,
+        path: String): Strategy[T, P] =
       (config: Config, underlying: PersistableSource[T, P]) => {
         val named: DataSource[T, P] = underlying match {
           case hq: HiveQueryDataSource[T, P] =>
@@ -103,9 +104,10 @@ object DataSource {
         }
       }
 
-    def reuseExisting[T <: ThriftStruct: Manifest: HasStructType, P: Partitions](name: String,
-                                                                  hiveTable: String,
-                                                                  path: String): Strategy[T, P] =
+    def reuseExisting[T <: ThriftStruct: Manifest: HasStructType, P: Partitions](
+        name: String,
+        hiveTable: String,
+        path: String): Strategy[T, P] =
       (config: Config, underlying: PersistableSource[T, P]) => {
         val named: DataSource[T, P] = underlying match {
           case hq: HiveQueryDataSource[T, _] =>
@@ -165,9 +167,10 @@ object DataSource {
         }
       }
 
-    def forceReuseExisting[T <: ThriftStruct: Manifest: HasStructType, P: Partitions](name: String,
-                                                                       hiveTable: String,
-                                                                       path: String): Strategy[T, _] =
+    def forceReuseExisting[T <: ThriftStruct: Manifest: HasStructType, P: Partitions](
+        name: String,
+        hiveTable: String,
+        path: String): Strategy[T, _] =
       (config: Config, underlying: PersistableSource[T, P]) => {
         val named: DataSource[T, P] = underlying match {
           case hq: HiveQueryDataSource[T, _] =>
@@ -219,9 +222,10 @@ object DataSource {
         }
       }
 
-    def flaggedReuse[T <: ThriftStruct: Manifest: HasStructType, P: Partitions](name: String,
-                                                                 hiveTable: String,
-                                                                 path: String): Strategy[T, P] =
+    def flaggedReuse[T <: ThriftStruct: Manifest: HasStructType, P: Partitions](
+        name: String,
+        hiveTable: String,
+        path: String): Strategy[T, P] =
       (config: Config, underlying: PersistableSource[T, P]) => {
         val named: DataSource[T, P] = underlying match {
           case hq: HiveQueryDataSource[_, _] =>
@@ -423,7 +427,7 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType, P: Pa
   def manifest: Manifest[T] = implicitly[Manifest[T]]
 
   def hasStructType: HasStructType[T] = implicitly[HasStructType[T]]
-  def structType = hasStructType.structType
+  def structType                      = hasStructType.structType
 
   def getUpstreamUdfs(): Map[(String, String), Class[GenericUDF]] =
     sources
@@ -492,9 +496,7 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType, P: Pa
              |AS ${mappedQuery}
           """.stripMargin
 
-            runQuery(driver)(createQuery,
-              s"Error creating view using query '${query}'"
-            )
+            runQuery(driver)(createQuery, s"Error creating view using query '${query}'")
             HiveView[T, P](viewName)
           } catch {
             case NonFatal(ex) => throw new Exception(s"Error trying to run query '$query'", ex)
@@ -530,10 +532,13 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType, P: Pa
           val path          = hdfsPath.getOrElse(config.hdfsPath(this))
 
           SessionState.get().setHiveVariables((parameters ++ evaluatedSources).asJava)
-          SessionState.get().setOverriddenConfigurations(Map(
-            "hive.exec.dynamic.partition" -> "true",
-            "hive.exec.dynamic.partition.mode" -> "nonstrict"
-          ).asJava)
+          SessionState
+            .get()
+            .setOverriddenConfigurations(
+              Map(
+                "hive.exec.dynamic.partition"      -> "true",
+                "hive.exec.dynamic.partition.mode" -> "nonstrict"
+              ).asJava)
 
           Option(GenericOptionsParser.getLibJars(config.conf))
             .map(_.toList)
@@ -576,7 +581,9 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType, P: Pa
 
             val partitionColumns = implicitly[Partitions[P]].fields
             val partitionBy = if (partitionColumns.nonEmpty) {
-              s"PARTITIONED BY (${partitionColumns.map({ case (name, typ) => s"${name} ${typ.hiveType}"}).mkString(", ")})"
+              s"PARTITIONED BY (${partitionColumns
+                .map({ case (name, typ) => s"${name} ${typ.hiveType}" })
+                .mkString(", ")})"
             } else {
               ""
             }
@@ -584,7 +591,9 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType, P: Pa
             // Create the table first.
             runQuery(driver)(
               s"""
-                |CREATE TABLE ${tableName} (${structType.fields.toList.map({ case (name, typ) => s"${name} ${typ.hiveType}"}).mkString(", ")})
+                |CREATE TABLE ${tableName} (${structType.fields.toList
+                   .map({ case (name, typ) => s"${name} ${typ.hiveType}" })
+                   .mkString(", ")})
                 |        ${partitionBy}
                 |        STORED AS PARQUET
                 |        LOCATION '${absolutePath}'
@@ -593,19 +602,22 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType, P: Pa
             )
 
             // We need to reorganise the columns so that the partitions columns come last.
-            val nonPartitionCols = structType.fields.toList.map(_._1).filter(name => ! partitionColumns.exists({ case (partName, _) => partName == name }))
+            val nonPartitionCols = structType.fields.toList
+              .map(_._1)
+              .filter(name => !partitionColumns.exists({ case (partName, _) => partName == name }))
             val partitionCols = partitionColumns.map(_._1)
-            val sortedCols = nonPartitionCols ++ partitionCols
+            val sortedCols    = nonPartitionCols ++ partitionCols
 
-            val reorganisedColumns = s"""SELECT ${sortedCols.map(name => s"mapped.${name}").mkString(", ")} FROM (${mappedQuery}) AS mapped"""
+            val reorganisedColumns = s"""SELECT ${sortedCols
+              .map(name => s"mapped.${name}")
+              .mkString(", ")} FROM (${mappedQuery}) AS mapped"""
 
             val partitionStatement = if (partitionCols.isEmpty) { "" } else {
               s"PARTITION (${partitionCols.mkString(", ")})"
             }
 
             // Insert the data
-            runQuery(driver)(
-              s"""
+            runQuery(driver)(s"""
                 |INSERT OVERWRITE TABLE ${tableName} ${partitionStatement} ${reorganisedColumns}
               """.stripMargin)
 

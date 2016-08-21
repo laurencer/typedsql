@@ -10,11 +10,12 @@ import scalaz.{-\/, \/, \/-}
 class SourceMapping[C <: whitebox.Context](val c: C) {
   import c.universe._
 
-  val partitionMapping = new PartitionMapping[c.type ](c)
+  val partitionMapping = new PartitionMapping[c.type](c)
 
   def dataSourceType = typeOf[DataSource[_, _]]
 
-  def readSources(parameters: Seq[Trees#Tree]): (Seq[Trees#Tree], Map[String, (StructType, List[(String, HiveType)])]) = {
+  def readSources(parameters: Seq[Trees#Tree])
+    : (Seq[Trees#Tree], Map[String, (StructType, List[(String, HiveType)])]) = {
 
     val processed = parameters.collect({
       case q"$mods val ${ name }: $tpt" if isDataSource(tpt) => {
@@ -48,13 +49,16 @@ class SourceMapping[C <: whitebox.Context](val c: C) {
 
   def isDataSource(typ: Tree): Boolean = c.typecheck(typ, c.TYPEmode).tpe <:< dataSourceType
 
-  def extractDataSource(typ: Tree): (Type, Type) = c.typecheck(typ, c.TYPEmode).tpe.normalize match {
-    case TypeRef(_, _, objectType :: partitionsType :: Nil) => {
-      (objectType, partitionsType)
+  def extractDataSource(typ: Tree): (Type, Type) =
+    c.typecheck(typ, c.TYPEmode).tpe.normalize match {
+      case TypeRef(_, _, objectType :: partitionsType :: Nil) => {
+        (objectType, partitionsType)
+      }
+      case TypeRef(_, _, other) => {
+        c.abort(c.enclosingPosition,
+                s"Got too many parameters for DataSource type (expected 2): ${typ}")
+      }
+      case other =>
+        c.abort(c.enclosingPosition, s"Expected DataSource type but instead got: ${typ}")
     }
-    case TypeRef(_, _, other) => {
-      c.abort(c.enclosingPosition, s"Got too many parameters for DataSource type (expected 2): ${typ}")
-    }
-    case other => c.abort(c.enclosingPosition, s"Expected DataSource type but instead got: ${typ}")
-  }
 }

@@ -30,9 +30,9 @@ object HiveMetadataTable {
   /** While the earlier operations failed with exception from with the cascading-hive code,
     * we need to deal with failure via `Result`
     */
-  def apply[T <: ThriftStruct: HasStructType, P : Partitions](database: String,
-                                              tableName: String,
-                                              location: Option[Path] = None)(
+  def apply[T <: ThriftStruct: HasStructType, P: Partitions](database: String,
+                                                             tableName: String,
+                                                             location: Option[Path] = None)(
       implicit m: Manifest[T])
     : MetadataTable = { // This operation could fail so type should convey it
 
@@ -47,7 +47,11 @@ object HiveMetadataTable {
     }
 
     assert(
-      implicitly[Partitions[P]].fields.map(_._1).toSet.intersect(structType.fields.map(_._1).toSet).isEmpty,
+      implicitly[Partitions[P]].fields
+        .map(_._1)
+        .toSet
+        .intersect(structType.fields.map(_._1).toSet)
+        .isEmpty,
       "Partition columns must be different from the fields in the thrift struct"
     )
 
@@ -119,7 +123,7 @@ object HiveMetadataTable {
       })
   }
 
-  def existsTableStrict[T <: ThriftStruct: Manifest: HasStructType, P : Partitions](
+  def existsTableStrict[T <: ThriftStruct: Manifest: HasStructType, P: Partitions](
       database: String,
       table: String,
       location: Option[Path]): Hive[Boolean] =
@@ -128,9 +132,7 @@ object HiveMetadataTable {
         val fs          = FileSystem.get(conf)
         val actualTable = client.getTable(database, table)
         val expectedTable =
-          HiveMetadataTable[T, P](database,
-                               table,
-                               location.map(fs.makeQualified(_)))
+          HiveMetadataTable[T, P](database, table, location.map(fs.makeQualified(_)))
         val actualCols = actualTable.getSd.getCols.asScala
           .map(c => (c.getName.toLowerCase, c.getType.toLowerCase))
           .toList
