@@ -10,9 +10,9 @@ object SqlQueryExample {
   @com.rouesnel.typedsql.UDF
   def myOtherUdf(input: Double): Int = ???
 
-  def query(minimumAge: Int)(people: DataSource[com.rouesnel.typedsql.Person],
-                             test: DataSource[ManualSqlStruct],
-                             myPeople: DataSource[Person]) =
+  def query(minimumAge: Int)(people: Unpartitioned[com.rouesnel.typedsql.Person],
+                             test: Unpartitioned[ManualSqlStruct],
+                             myPeople: Unpartitioned[Person]) =
     """
       SELECT 1 as int_value,
             1.3 as double_value,

@@ -16,7 +16,7 @@ import com.rouesnel.typedsql.macros.{ParameterMapping, ScroogeGenerator, SourceM
 import com.rouesnel.typedsql.util._
 
 @compileTimeOnly("enable macro paradise to expand macro annotations")
-class SqlQuery extends StaticAnnotation {
+class    SqlQuery extends StaticAnnotation {
   def macroTransform(annottees: Any*) = macro SqlQuery.impl
 }
 
@@ -203,6 +203,8 @@ object SqlQuery {
             q"Map(..${literals})"
           }
 
+          val partitionType = tq"Unit"
+
           val amendedParents = parents :+ tq"com.rouesnel.typedsql.CompiledSqlQuery"
           q"""$mods object $tpname extends ..$amendedParents {
             ..$remainingMembers
@@ -213,11 +215,13 @@ object SqlQuery {
 
             def sql: String = ${Literal(Constant(sqlStatement))}
 
-            def query(...${queryParams}): com.rouesnel.typedsql.HiveQueryDataSource[Row] = {
+            type DataSource = com.rouesnel.typedsql.DataSource[Row, ${partitionType}]
+
+            def query(...${queryParams}): com.rouesnel.typedsql.HiveQueryDataSource[Row, ${partitionType}] = {
              implicit def hasStructType: com.rouesnel.typedsql.core.HasStructType[Row] =
                com.rouesnel.typedsql.core.HasStructType[Row](com.rouesnel.typedsql.core.HiveType.parseHiveType(${Literal(
             Constant(outputRecord.hiveType))}).toOption.get.asInstanceOf[com.rouesnel.typedsql.core.StructType])
-             com.rouesnel.typedsql.HiveQueryDataSource[Row](
+             com.rouesnel.typedsql.HiveQueryDataSource[Row, ${partitionType}](
                sql,
                ${readParametersAsMap(parameters.keys)},
                ${readSourcesAsMap(sources.keys)},

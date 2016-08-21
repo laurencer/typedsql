@@ -10,7 +10,7 @@ import org.slf4j.LoggerFactory
 
 @SqlQuery object ComplexExample {
 
-  def query(upstream: DataSource[ComplexValue]) =
+  def query(upstream: Unpartitioned[ComplexValue]) =
     """
       SELECT data_id, value
       FROM ${upstream}
@@ -22,7 +22,7 @@ object ComplexExampleApp extends ExecutionApp {
   val log = LoggerFactory.getLogger(getClass)
 
   def job = Execution.getConfigMode.flatMap({ case (appConfig, Hdfs(_, conf)) => {
-    val source: DataSource[ComplexValue] =
+    val source: Unpartitioned[ComplexValue] =
       TypedPipeDataSource(
         TypedPipe.from(
           IterableSource(List(

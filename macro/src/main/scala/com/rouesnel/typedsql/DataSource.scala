@@ -34,9 +34,9 @@ object DataSource {
 
   case class Config(conf: HiveConf,
                     args: Map[String, List[String]],
-                    tableName: DataSource[_] => String,
-                    viewName: DataSource[_] => String,
-                    hdfsPath: DataSource[_] => String) {}
+                    tableName: DataSource[_, _] => String,
+                    viewName: DataSource[_, _] => String,
+                    hdfsPath: DataSource[_, _] => String) {}
 
   def randomPositive = math.abs(Random.nextLong())
   def timeFormat     = new SimpleDateFormat("yyyyMMddHHmmss")
@@ -51,17 +51,17 @@ object DataSource {
       src => s"/tmp/typedsql_tmp/${currentTime}"
     )
 
-  type Strategy[T <: ThriftStruct] = (DataSource.Config,
-                                      PersistableSource[T]) => Execution[DataSource[T]]
+  type Strategy[T <: ThriftStruct, Partitions] = (DataSource.Config,
+                                      PersistableSource[T, Partitions]) => Execution[DataSource[T, Partitions]]
   object Strategy {
-    def alwaysRefresh[T <: ThriftStruct: Manifest: HasStructType](name: String,
+    def alwaysRefresh[T <: ThriftStruct: Manifest: HasStructType, Partitions](name: String,
                                                                   hiveTable: String,
-                                                                  path: String): Strategy[T] =
-      (config: Config, underlying: PersistableSource[T]) => {
-        val named = underlying match {
-          case hq: HiveQueryDataSource[_] =>
+                                                                  path: String): Strategy[T, Partitions] =
+      (config: Config, underlying: PersistableSource[T, Partitions]) => {
+        val named: DataSource[T, Partitions] = underlying match {
+          case hq: HiveQueryDataSource[T, Partitions] =>
             hq.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
-          case tp: TypedPipeDataSource[_] =>
+          case tp: TypedPipeDataSource[T, Partitions] =>
             tp.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
         }
 
@@ -103,14 +103,14 @@ object DataSource {
         }
       }
 
-    def reuseExisting[T <: ThriftStruct: Manifest: HasStructType](name: String,
+    def reuseExisting[T <: ThriftStruct: Manifest: HasStructType, Partitions](name: String,
                                                                   hiveTable: String,
-                                                                  path: String): Strategy[T] =
-      (config: Config, underlying: PersistableSource[T]) => {
-        val named = underlying match {
-          case hq: HiveQueryDataSource[T] =>
+                                                                  path: String): Strategy[T, Partitions] =
+      (config: Config, underlying: PersistableSource[T, Partitions]) => {
+        val named: DataSource[T, Partitions] = underlying match {
+          case hq: HiveQueryDataSource[T, _] =>
             hq.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
-          case tp: TypedPipeDataSource[T] =>
+          case tp: TypedPipeDataSource[T, _] =>
             tp.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
         }
         Execution.from {
@@ -144,7 +144,7 @@ object DataSource {
           if (alreadyExists && conflictingTableExists) {
             log.info(
               s"DataSource ${name} already exists (${hiveTable} - ${path}) - reusing existing data.")
-            MaterialisedHiveTable[T](path, hiveTable)
+            MaterialisedHiveTable[T, Partitions](path, hiveTable)
           } else if (conflictingTableExists) {
             log.info(
               s"A conflicting table for DataSource ${name} already exists (${hiveTable} - ${path}). Dropping existing data and rematerialising.")
@@ -165,14 +165,14 @@ object DataSource {
         }
       }
 
-    def forceReuseExisting[T <: ThriftStruct: Manifest: HasStructType](name: String,
+    def forceReuseExisting[T <: ThriftStruct: Manifest: HasStructType, Partitions](name: String,
                                                                        hiveTable: String,
-                                                                       path: String): Strategy[T] =
-      (config: Config, underlying: PersistableSource[T]) => {
-        val named = underlying match {
-          case hq: HiveQueryDataSource[T] =>
+                                                                       path: String): Strategy[T, _] =
+      (config: Config, underlying: PersistableSource[T, Partitions]) => {
+        val named: DataSource[T, Partitions] = underlying match {
+          case hq: HiveQueryDataSource[T, _] =>
             hq.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
-          case tp: TypedPipeDataSource[T] =>
+          case tp: TypedPipeDataSource[T, _] =>
             tp.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
         }
         Execution.from {
@@ -206,11 +206,11 @@ object DataSource {
           if (alreadyExists && conflictingTableExists) {
             log.info(
               s"DataSource ${name} already exists (${hiveTable} - ${path}) - reusing existing data.")
-            MaterialisedHiveTable[T](path, hiveTable)
+            MaterialisedHiveTable[T, Partitions](path, hiveTable)
           } else if (conflictingTableExists) {
             log.warn(
               s"A conflicting table for DataSource ${name} already exists (${hiveTable} - ${path}). Forcing reuse of existing table (may break!).")
-            MaterialisedHiveTable[T](path, hiveTable)
+            MaterialisedHiveTable[T, Partitions](path, hiveTable)
           } else {
             log.info(
               s"DataSource ${name} does not exist (${hiveTable} - ${path}). Materialising data source.")
@@ -219,14 +219,14 @@ object DataSource {
         }
       }
 
-    def flaggedReuse[T <: ThriftStruct: Manifest: HasStructType](name: String,
+    def flaggedReuse[T <: ThriftStruct: Manifest: HasStructType, Partitions](name: String,
                                                                  hiveTable: String,
-                                                                 path: String): Strategy[T] =
-      (config: Config, underlying: PersistableSource[T]) => {
-        val named = underlying match {
-          case hq: HiveQueryDataSource[_] =>
+                                                                 path: String): Strategy[T, Partitions] =
+      (config: Config, underlying: PersistableSource[T, Partitions]) => {
+        val named: DataSource[T, Partitions] = underlying match {
+          case hq: HiveQueryDataSource[_, _] =>
             hq.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
-          case tp: TypedPipeDataSource[_] =>
+          case tp: TypedPipeDataSource[_, _] =>
             tp.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
         }
 
@@ -261,7 +261,7 @@ object DataSource {
           if (alreadyExists && config.args.contains(s"reuse-${name}")) {
             log.info(
               s"DataSource ${name} already exists (${hiveTable} - ${path}) - reusing existing data.")
-            MaterialisedHiveTable[T](path, hiveTable)
+            MaterialisedHiveTable[T, Partitions](path, hiveTable)
           } else {
             if (conflictingTableExists) {
               log.info(
@@ -289,19 +289,19 @@ object DataSource {
   * A Data Source is something that can be queried to produce a dataset on HDFS either as a
   * Hive table or a Typed Pipe.
   */
-sealed abstract class DataSource[T <: ThriftStruct] {
+sealed abstract class DataSource[T <: ThriftStruct, Partitions] {
   def toTypedPipe(config: DataSource.Config): Execution[TypedPipe[T]]
-  def toHiveTable(config: DataSource.Config): Execution[MaterialisedHiveTable[T]]
+  def toHiveTable(config: DataSource.Config): Execution[MaterialisedHiveTable[T, Partitions]]
 }
 
 /**
   * A source that can be represented/used as a Hive view (e.g. does not require materialisation).
   */
-sealed trait HiveViewSource[T <: ThriftStruct] {
-  def toHiveView(config: DataSource.Config): Execution[HiveView[T]]
+sealed trait HiveViewSource[T <: ThriftStruct, Partitions] {
+  def toHiveView(config: DataSource.Config): Execution[HiveView[T, Partitions]]
 }
 
-sealed trait PersistableSource[T <: ThriftStruct] { this: DataSource[T] =>
+sealed trait PersistableSource[T <: ThriftStruct, Partitions] { this: DataSource[T, Partitions] =>
 
   def manifest: Manifest[T]
 
@@ -309,10 +309,10 @@ sealed trait PersistableSource[T <: ThriftStruct] { this: DataSource[T] =>
 
   def partitions: List[(String, String)]
 
-  def persist(strategy: DataSource.Strategy[T]): PersistedDataSource[T] = {
+  def persist(strategy: DataSource.Strategy[T, Partitions]): PersistedDataSource[T, Partitions] = {
     implicit val m  = manifest
     implicit val st = hasStructType
-    PersistedDataSource[T](this, strategy)
+    PersistedDataSource[T, Partitions](this, strategy)
   }
 }
 
@@ -322,11 +322,11 @@ sealed trait PersistableSource[T <: ThriftStruct] { this: DataSource[T] =>
   * @param hdfsPath path to dataset on HDFS
   * @param hiveTable fully qualified name (e.g. `db.tablename`)
   */
-case class MaterialisedHiveTable[T <: ThriftStruct: Manifest: HasStructType](
+case class MaterialisedHiveTable[T <: ThriftStruct: Manifest: HasStructType, Partitions](
     hdfsPath: String,
     hiveTable: String,
     partitions: List[(String, String)] = Nil)
-    extends DataSource[T] {
+    extends DataSource[T, Partitions] {
   def toTypedPipe(config: DataSource.Config): Execution[TypedPipe[T]] =
     Execution.from({
       val db :: table :: Nil = hiveTable.split("\\.").toList
@@ -339,7 +339,7 @@ case class MaterialisedHiveTable[T <: ThriftStruct: Manifest: HasStructType](
       TypedPipe.from(ParquetScroogeSource[T](partitions.map(_.toString): _*))
     })
 
-  def toHiveTable(config: DataSource.Config): Execution[MaterialisedHiveTable[T]] =
+  def toHiveTable(config: DataSource.Config): Execution[MaterialisedHiveTable[T, Partitions]] =
     Execution.from(this)
 }
 
@@ -349,28 +349,28 @@ case class MaterialisedHiveTable[T <: ThriftStruct: Manifest: HasStructType](
   * @param hiveTable name in the Hive metastore (including database).
   * @tparam T type of output records.
   */
-case class HiveView[T <: ThriftStruct: Manifest: HasStructType](hiveTable: String)
-    extends DataSource[T]
-    with HiveViewSource[T] {
+case class HiveView[T <: ThriftStruct: Manifest: HasStructType, Partitions](hiveTable: String)
+    extends DataSource[T, Partitions]
+    with HiveViewSource[T, Partitions] {
   def toTypedPipe(config: DataSource.Config): Execution[TypedPipe[T]] =
     HiveQueryDataSource(s"SELECT * FROM ${hiveTable}", Map.empty, Map.empty, Map.empty)
       .toTypedPipe(config)
-  def toHiveTable(config: DataSource.Config): Execution[MaterialisedHiveTable[T]] =
+  def toHiveTable(config: DataSource.Config): Execution[MaterialisedHiveTable[T, Partitions]] =
     HiveQueryDataSource(s"SELECT * FROM ${hiveTable}", Map.empty, Map.empty, Map.empty)
       .toHiveTable(config)
-  def toHiveView(config: DataSource.Config): Execution[HiveView[T]] = Execution.from(this)
+  def toHiveView(config: DataSource.Config): Execution[HiveView[T, Partitions]] = Execution.from(this)
 }
 
 /**
   * Generic Scalding Typed Pipe source. Will be persisted to disk on first use as a Hive table.
   */
-case class TypedPipeDataSource[T <: ThriftStruct: Manifest: HasStructType](
+case class TypedPipeDataSource[T <: ThriftStruct: Manifest: HasStructType, Partitions](
     pipe: TypedPipe[T],
     partitions: List[(String, String)] = Nil,
     hiveTableName: Option[String] = None,
     hdfsPath: Option[String] = None
-) extends DataSource[T]
-    with PersistableSource[T] {
+) extends DataSource[T, Partitions]
+    with PersistableSource[T, Partitions] {
   def manifest: Manifest[T] = implicitly[Manifest[T]]
 
   def hasStructType: HasStructType[T] = implicitly[HasStructType[T]]
@@ -378,7 +378,7 @@ case class TypedPipeDataSource[T <: ThriftStruct: Manifest: HasStructType](
   def toTypedPipe(config: DataSource.Config): Execution[TypedPipe[T]] =
     Execution.from { pipe }
 
-  def toHiveTable(config: DataSource.Config): Execution[MaterialisedHiveTable[T]] = {
+  def toHiveTable(config: DataSource.Config): Execution[MaterialisedHiveTable[T, Partitions]] = {
     val path               = hdfsPath.getOrElse(config.hdfsPath(this))
     val tableName          = hiveTableName.getOrElse(config.tableName(this))
     val db :: table :: Nil = tableName.split("\\.").toList
@@ -408,18 +408,18 @@ case class TypedPipeDataSource[T <: ThriftStruct: Manifest: HasStructType](
 /**
   * Compiled and parameterised Hive query with defined sources.
   */
-case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType](
+case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType, Partitions](
     query: String,
     parameters: Map[String, String],
-    sources: Map[String, DataSource[_]],
+    sources: Map[String, DataSource[_, _]],
     udfs: Map[(String, String), Class[GenericUDF]],
     partitions: List[(String, String)] = Nil,
     hiveViewName: Option[String] = None,
     hiveTableName: Option[String] = None,
     hdfsPath: Option[String] = None
-) extends DataSource[T]
-    with HiveViewSource[T]
-    with PersistableSource[T] {
+) extends DataSource[T, Partitions]
+    with HiveViewSource[T, Partitions]
+    with PersistableSource[T, Partitions] {
 
   def manifest: Manifest[T] = implicitly[Manifest[T]]
 
@@ -428,16 +428,16 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType](
   def getUpstreamUdfs(): Map[(String, String), Class[GenericUDF]] =
     sources
       .collect({
-        case (_, hqds: HiveQueryDataSource[_]) => hqds.udfs
+        case (_, hqds: HiveQueryDataSource[_, _]) => hqds.udfs
       })
       .fold(Map.empty)(_ ++ _)
 
-  def toHiveView(config: DataSource.Config): Execution[HiveView[T]] =
+  def toHiveView(config: DataSource.Config): Execution[HiveView[T, Partitions]] =
     Execution
       .sequence(sources.toList.map({
-        case (variableName, hvs: HiveViewSource[_]) =>
+        case (variableName, hvs: HiveViewSource[_, _]) =>
           hvs.toHiveView(config).map(view => variableName -> view.hiveTable)
-        case (variableName, dataSource: DataSource[_]) =>
+        case (variableName, dataSource: DataSource[_, _]) =>
           dataSource
             .toHiveTable(config)
             .map(executedQuery => (variableName, executedQuery.hiveTable))
@@ -497,7 +497,7 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType](
               throw new Exception(
                 s"Error creating view using query '$query'. ${response.getErrorMessage}")
             else {
-              HiveView[T](viewName)
+              HiveView[T, Partitions](viewName)
             }
           } catch {
             case NonFatal(ex) => throw new Exception(s"Error trying to run query '$query'", ex)
@@ -507,14 +507,14 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType](
           }
       })
 
-  def toHiveTable(config: DataSource.Config): Execution[MaterialisedHiveTable[T]] =
+  def toHiveTable(config: DataSource.Config): Execution[MaterialisedHiveTable[T, Partitions]] =
     Execution
       .sequence(
         // First run all the source executions.
         sources.toList.map({
-          case (variableName, hvs: HiveViewSource[_]) =>
+          case (variableName, hvs: HiveViewSource[_, _]) =>
             hvs.toHiveView(config).map(view => (variableName, view.hiveTable))
-          case (variableName, dataSource: DataSource[_]) =>
+          case (variableName, dataSource: DataSource[_, _]) =>
             dataSource
               .toHiveTable(config)
               .map(executedQuery => (variableName, executedQuery.hiveTable))
@@ -599,7 +599,7 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType](
                 throw new Exception(
                   s"Error converting table ${tableName} from managed to external. ${response.getErrorMessage}")
 
-              MaterialisedHiveTable[T](path, tableName)
+              MaterialisedHiveTable[T, Partitions](path, tableName)
             }
           } catch {
             case NonFatal(ex) => throw new Exception(s"Error trying to run query '$query'", ex)
@@ -619,14 +619,14 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType](
   * A Data Source that wraps an underlying implementation and applies a strategy to decide whether
   * to execute the underlying data source or to use a cache/stale data.
   */
-case class PersistedDataSource[T <: ThriftStruct: Manifest: HasStructType](
-    underlying: PersistableSource[T],
-    strategy: DataSource.Strategy[T])
-    extends DataSource[T] {
+case class PersistedDataSource[T <: ThriftStruct: Manifest: HasStructType, Partitions](
+    underlying: PersistableSource[T, Partitions],
+    strategy: DataSource.Strategy[T, Partitions])
+    extends DataSource[T, Partitions] {
 
   def toTypedPipe(config: DataSource.Config): Execution[TypedPipe[T]] =
     strategy(config, underlying).flatMap(_.toTypedPipe(config))
 
-  def toHiveTable(config: DataSource.Config): Execution[MaterialisedHiveTable[T]] =
+  def toHiveTable(config: DataSource.Config): Execution[MaterialisedHiveTable[T, Partitions]] =
     strategy(config, underlying).flatMap(_.toHiveTable(config))
 }

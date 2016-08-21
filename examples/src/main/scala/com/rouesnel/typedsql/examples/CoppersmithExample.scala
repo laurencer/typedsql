@@ -8,7 +8,7 @@ import commbank.coppersmith.api.{DataSource => _, _}
 import scalding._
 import Coppersmith._
 import EavtText.{EavtEnc, eavtByDay}
-import com.rouesnel.typedsql.SqlQuery
+import com.rouesnel.typedsql._
 import com.rouesnel.typedsql.examples.coppersmith.TypedSqlCoppersmithExample.{Parameters, Sources}
 import commbank.coppersmith.thrift.Eavt
 
@@ -17,10 +17,10 @@ import com.rouesnel.typedsql.DataSource
 @SqlQuery
 object TypedSqlCoppersmithExample {
 
-  def query(minimumAge: Int)(customers: DataSource[Customer],
-                             orders: DataSource[Order],
-                             orderLineItems: DataSource[OrderLineItem],
-                             payments: DataSource[Payment]) =
+  def query(minimumAge: Int)(customers: Unpartitioned[Customer],
+                             orders: Unpartitioned[Order],
+                             orderLineItems: Unpartitioned[OrderLineItem],
+                             payments: Unpartitioned[Payment]) =
     """
       SELECT c.customer_id     as customer_id,
              c.age             as age,

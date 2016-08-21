@@ -47,7 +47,7 @@ object HiveCache {
     "version"
   )
 
-  case class Request(sources: Map[String, StructType],
+  case class Request(sources: Map[String, (StructType, List[(String, HiveType)])],
                      parameterVariables: Map[String, String],
                      udfs: List[UdfDescription],
                      query: String,
@@ -60,7 +60,7 @@ object HiveCache {
 
   def cached(driver: Driver,
              hiveConf: HiveConf,
-             sources: Map[String, StructType],
+             sources: Map[String, (StructType, List[(String, HiveType)])],
              parameterVariables: Map[String, String],
              udfs: List[UdfDescription],
              query: String,
@@ -134,7 +134,7 @@ object HiveCache {
     }
 
   def cached(hiveConf: HiveConf,
-             sources: Map[String, StructType],
+             sources: Map[String, (StructType, List[(String, HiveType)])],
              parameterVariables: Map[String, String],
              udfs: List[UdfDescription],
              query: String,

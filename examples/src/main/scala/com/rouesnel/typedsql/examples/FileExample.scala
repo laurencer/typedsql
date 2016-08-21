@@ -5,7 +5,7 @@ import com.rouesnel.typedsql._
 @SqlQuery
 object FileExample {
 
-  def query(people: DataSource[Person], firstName: String) =
+  def query(people: Unpartitioned[Person], firstName: String) =
     FromFile("examples/src/main/hive/example.sql")
 
 }

@@ -39,7 +39,7 @@ abstract class TypedSqlSpec extends ThermometerHiveSpec with ParquetLogging {
     _ => s"${testDir.resolve("tmp")}/typedsql_tmp/${new Date().getTime}_${randomPositive}"
   )
 
-  def executeDataSource[T <: ThriftStruct: Manifest](source: DataSource[T]): List[T] = {
+  def executeDataSource[T <: ThriftStruct: Manifest, P](source: DataSource[T, P]): List[T] = {
     executesSuccessfully[List[T]](
       source
         .toTypedPipe(testConfig)
@@ -52,7 +52,7 @@ abstract class TypedSqlSpec extends ThermometerHiveSpec with ParquetLogging {
     )
   }
 
-  def createDataSource[T <: ThriftStruct: Manifest: HasStructType](elements: T*): DataSource[T] = {
-    TypedPipeDataSource[T](IterablePipe[T](elements))
+  def createDataSource[T <: ThriftStruct: Manifest: HasStructType](elements: T*): DataSource[T, Partitions.None] = {
+    TypedPipeDataSource[T, Partitions.None](IterablePipe[T](elements))
   }
 }

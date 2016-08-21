@@ -5,7 +5,7 @@ import com.rouesnel.typedsql.{DataSource, SqlQuery}
 @SqlQuery
 object ChainedExample {
 
-  def query(upstream: DataSource[SqlQueryExample.Row]) =
+  def query(upstream: SqlQueryExample.DataSource) =
     """
       SELECT int_value, COUNT(*) as count
       FROM ${upstream}

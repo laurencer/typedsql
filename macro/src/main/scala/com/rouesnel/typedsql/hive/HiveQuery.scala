@@ -44,7 +44,7 @@ object HiveQuery {
     * @return error or the compiled Hive Schema
     */
   def compileQuery(hiveConf: HiveConf,
-                   sources: Map[String, StructType],
+                   sources: Map[String, (StructType, List[(String, HiveType)])],
                    parameterVariables: Map[String, String],
                    udfs: List[UdfDescription],
                    query: String): Throwable \/ Schema =
@@ -73,7 +73,7 @@ object HiveQuery {
     */
   def compileQuery(driver: Driver,
                    hiveConf: HiveConf,
-                   sources: Map[String, StructType],
+                   sources: Map[String, (StructType, List[(String, HiveType)])],
                    parameterVariables: Map[String, String],
                    udfs: List[UdfDescription],
                    query: String): Throwable \/ Schema =
@@ -122,7 +122,7 @@ object HiveQuery {
     */
   def createCompilationEnvironment(dbName: String,
                                    hiveConf: HiveConf,
-                                   sources: Map[String, StructType]) = {
+                                   sources: Map[String, (StructType, List[(String, HiveType)])]) = {
     import au.com.cba.omnia.beeswax._
     Hive
       .createDatabase(dbName)
@@ -130,7 +130,7 @@ object HiveQuery {
         Hive.getConfClient.map({
           case (conf, client) =>
             sources.toList.map({
-              case (tableName, tableSchema) => {
+              case (tableName, (tableSchema, partitionCols)) => {
                 val table = new Table()
                 table.setDbName(dbName)
                 table.setTableName(tableName)
@@ -145,6 +145,15 @@ object HiveQuery {
                     sd.addToCols(fieldSchema)
                   }
                 })
+
+                val partitionFieldSchemas = partitionCols.map({ case (fieldName, fieldType) => {
+                  new FieldSchema(fieldName, fieldType.hiveType, "Table in compilation environment")
+                }})
+
+                if (partitionFieldSchemas.nonEmpty) {
+                  table.setPartitionKeys(partitionFieldSchemas.asJava)
+                  table.setPartitionKeysIsSet(true)
+                }
 
                 table.setSd(sd)
 

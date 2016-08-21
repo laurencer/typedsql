@@ -12,7 +12,7 @@ class SqlSpec extends TypedSqlSpec { def is = s2"""
     val people          = createDataSource(Person("Bob", "Brown", 28))
     val manualSqlStruct = createDataSource[ManualSqlStruct]()
 
-    val sqlDataSource: DataSource[SqlQueryExample.Row] =
+    val sqlDataSource: SqlQueryExample.DataSource =
       SqlQueryExample.query(18)(people, manualSqlStruct, people)
 
     val chainedDataSource = ChainedExample.query(sqlDataSource)

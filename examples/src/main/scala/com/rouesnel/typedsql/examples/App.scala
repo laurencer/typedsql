@@ -28,7 +28,7 @@ object Step2 {
 
   @UDF def birthyear(age: Int): Int = 1982
 
-  def query(step1: DataSource[Step1.Row]) =
+  def query(step1: Step1.DataSource) =
     """
       SELECT *,
              joinNames(firstname, lastname) as full_name,
@@ -43,10 +43,10 @@ object App extends ExecutionApp {
     Execution.getConfigMode.flatMap({
       case (appConfig, Hdfs(_, conf)) => {
 
-        val step1: DataSource[Step1.Row] =
+        val step1: Step1.DataSource =
           Step1.query.persist(reuseExisting("step1", "example.step1", "examples/step1"))
 
-        val step2: DataSource[Step2.Row] =
+        val step2: Step2.DataSource =
           Step2.query(step1).persist(flaggedReuse("step2", "example.step2", "examples/step2"))
 
         def config = DataSource.defaultConfig(
