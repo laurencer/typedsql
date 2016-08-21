@@ -12,12 +12,11 @@ class PartitionMapping[C <: whitebox.Context](val c: C) {
     typ.normalize match {
       case RefinedType(base, methods) => {
         methods.toList.collect({
-          case m if m.isMethod => m.name.encodedName.toString -> hiveType.convertScalaToHiveType(m.asMethod.returnType)
+          case m if m.isMethod => hiveType.camelCaseToUnderscores(m.name.encodedName.toString) -> hiveType.convertScalaToHiveType(m.asMethod.returnType)
         })
       }
       case unitType if unitType =:= typeOf[Unit] => Nil
       case other => {
-        println(s"${other} ${typeOf[Unit]} ${other =:= typeOf[Unit]} ${other.normalize =:= typeOf[Unit]} ")
         c.abort(c.enclosingPosition, s"Invalid type given for partitions: ${typ}")
       }
     }

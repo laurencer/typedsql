@@ -84,18 +84,11 @@ class ThriftHiveTypeMacro[C <: Context](val c: C) {
     })
 
     // 3. Perform case conversion.
-    // Convert capitals to underscores unless followed by multipled capitals.
+    // Convert capitals to underscores unless followed by multiple capitals.
     val cleanedFields = readerFields
       .map({
         case (name, fieldType) =>
-          // Stolen from http://stackoverflow.com/a/1176023/49142
-          val underscoredName =
-            name
-              .replaceAll("""(.)([A-Z][a-z]+)""", """$1_$2""")
-              .replaceAll("""([a-z0-9])([A-Z])""", "$1_$2")
-              .toLowerCase()
-
-          underscoredName -> fieldType
+          camelCaseToUnderscores(name) -> fieldType
       })
       .reverse
 
@@ -103,5 +96,13 @@ class ThriftHiveTypeMacro[C <: Context](val c: C) {
       case (fieldName, fieldType) =>
         fieldName -> convertScalaToHiveType(fieldType)
     })))
+  }
+
+  def camelCaseToUnderscores(name: String) = {
+    // Stolen from http://stackoverflow.com/a/1176023/49142
+    name
+      .replaceAll("""(.)([A-Z][a-z]+)""", """$1_$2""")
+      .replaceAll("""([a-z0-9])([A-Z])""", "$1_$2")
+      .toLowerCase()
   }
 }

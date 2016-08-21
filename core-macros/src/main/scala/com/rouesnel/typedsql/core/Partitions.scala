@@ -4,6 +4,7 @@ import scala.reflect.macros._
 
 object Partitions {
   type None = Unit
+  implicit def nonePartitions: Partitions[None] = Partitions[None](Nil)
 
   implicit def materialisePartitions[T]: Partitions[T] = macro typeMacro[T]
 
@@ -20,7 +21,7 @@ object Partitions {
     }})
 
     c.Expr[Partitions[T]](
-      q"com.rouesnel.typedsql.core.Partitions(List(..$variables))"
+      q"com.rouesnel.typedsql.core.Partitions[${typ}](List(..$variables))"
     )
   }
 }

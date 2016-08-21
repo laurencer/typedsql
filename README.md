@@ -10,9 +10,9 @@ By adding the `@SqlQuery` annotation to an object, TypedSQL will generate a [Par
 
 @SqlQuery object TransactionSummary {
   def query(transactionType: String, year: Int)
-           (transactions: DataSource[Transaction],
-            accounts:     DataSource[ProductAccount],
-            customers:    DataSource[Customer]) =
+           (transactions: DataSource[Transaction, Partitions.None],
+            accounts:     DataSource[ProductAccount, Partitions.None],
+            customers:    DataSource[Customer, Partitions.None]) =
     """
       SELECT c.id           as customer_id,
              MONTH(t.date)  as month,
@@ -28,11 +28,11 @@ By adding the `@SqlQuery` annotation to an object, TypedSQL will generate a [Par
 
 ```
 
-The `query` is checked for validity at compile time (e.g. if you have a syntax error or reference an invalid source/parameter then it will be caught by the Scala compiler) and replaced with a function that returns a usable `DataSource[Row]`.
+The `query` is checked for validity at compile time (e.g. if you have a syntax error or reference an invalid source/parameter then it will be caught by the Scala compiler) and replaced with a function that returns a usable `DataSource[Row, Partitions]`.
 
 The parameters to the `query` method are either (*note - multiple parameter groups are supported and they are treated equally*):
 
-- Data Sources (any parameter of the type `DataSource[_]`): these represent the upstream tables used by the query.
+- Data Sources (any parameter of the type `DataSource[T, P]`): these represent the upstream tables used by the query.
 - Variables (all other parameters): these are variables that available in the body of the query.
 
 The macro also adds a new case class to `TransactionSummary` called `Row` which represents the output schema of the query and looks something like (nb. field names are converted to *Camel Case* for ease of use):
@@ -64,17 +64,20 @@ If the query is changed and a field is removed or its type is changed then it wi
 
 ## Using DataSources
 
-`DataSource[T]`s represent a query that can produce a dataset on HDFS (similar to Scalding's `TypedPipe[T]`s). There are two main ways to use a `DataSource[T]`:
+`DataSource[T, P]`s represent a query that can produce a dataset on HDFS (similar to Scalding's `TypedPipe[T]`s). There are two main ways to use a `DataSource[T, P]`:
 
 - `DataSource#toTypedPipe(config): Execution[TypedPipe[T]]`
-- `DataSource#toHiveTable(config): Execution[MaterialisedHiveTable[T]]`
+- `DataSource#toHiveTable(config): Execution[MaterialisedHiveTable[T, P]]`
 
 The `MaterialisedHiveTable` provides access to the name of the output Hive table (`hiveTable`) which can then be accessed through normal means.
 
-`DataSource[T]`s also have a few neat tricks:
+By default `@SqlQuery` adds a type alias `DataSource` to the generated object for ease of use.
+For example, the `TransactionSummary` data source can be referred to as `TransactionSummary.DataSource`.
 
-- They can automatically 
+Two type aliases are available for `DataSource[_, _]` if `com.rouesnel.typedsql._` is imported:
 
+- `Unpartitioned[T] => DataSource[T, Partitions.None]`: helper to avoid having to type `DataSource[T, Partitions.None]`
+- `Partitioned[T, P] => DataSource[T, P]`: allows consistency when using `Unpartitioned[T]`
 
 ## Reusing Queries
 
@@ -83,8 +86,8 @@ The `Row` class generated on the object is usable directly in Scalding flows or 
 ```scala
 
 @SqlQuery object WebClickTransactionAnalysis {
-  def query(webClicks: DataSource[WebClick])
-           (transactionSummaries: DataSource[TransactionSummary.Row]) =
+  def query(webClicks: DataSource[WebClick, Partitions.None])
+           (transactionSummaries: TransactionSummary.DataSource) =
     """
       SELECT ts.id    as customer_id,
              ts.month as month,
@@ -104,6 +107,13 @@ Since the `query` method is a function it can be composed by regular means.
 
 ```
 
+Where multiple Hive queries are chained together, TypedSQL will attempt to use Hive views to compose
+them if possible at run time. This means that larger queries can be safely split into multiple objects
+without impacting performance as Hive is able to optimise across the views.
+
+*Note: TypedSQL cannot optimise across conversion to/from `TypedPipe[T]` which will result in the dataset
+ being persisted to HDFS.*
+
 ## UDFs (experimental)
 
 User-defined functions in Hive allow a query to execute a Java function as if it were built-in to
@@ -116,8 +126,8 @@ Scala functions inside the `@SqlQuery` object with the `@UDF` annotation.
   @UDF convertTransactionId(id: String): String = 
     "TRANS_" + id.split("\\.").last
 
-  def query(transactions: DataSource[Transaction],
-            accounts:     DataSource[ProductAccount]) =
+  def query(transactions: DataSource[Transaction, Partitions.None],
+            accounts:     DataSource[ProductAccount, Partitions.None]) =
     """
       SELECT c.id                       as customer_id,
              t.*,
@@ -131,6 +141,37 @@ Scala functions inside the `@SqlQuery` object with the `@UDF` annotation.
 
 The `@UDF` macro will generate a `GenericUDF` implementation for the Scala function behind the 
 scenes and automatically register the function when executing the queries.
+
+## Partitioning (experimental)
+
+Partitions are represented through the second type parameter of DataSource (e.g. `DataSource[RowType, Partitions]`).
+
+The partitions type parameter can either be:
+ 
+- `Partitions.None` - represents an unpartitioned dataset, or
+- An anonymous class of the form `{ def year: String; def month: Int }`. In this case there are 
+  two partition columns: `year` and `month`.
+  
+To partition the result of a `@SqlQuery` - simply add a type alias called `Partitions` to the 
+class. For example:
+
+```scala
+@SqlQuery object MyPartitionedQuery {
+  type Partitions = { def year: String; def month: String; def day: String }
+  def query = """SELECT "2000" as year, "10" as month, "31" as day """ 
+}
+```
+
+The partition columns will be checked at compile time for validity (i.e. to ensure that they
+exist in the query).
+
+*Note: partitioned columns are not persisted in the Parquet data on disk and instead only exist
+in the folder structure. Thus the partition columns are not present in the `Row` class.*
+
+**WARNING**: *due to the way Hive dynamic partitioning works, the order of the columns in the query that
+is actually run may be different to the order specified in the query as written. Any partition
+columns are re-arranged to be the last of the selected columns. **This may break any use of 
+positional column offsets*.
 
 ## Examples
 

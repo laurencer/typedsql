@@ -158,8 +158,35 @@ object SqlQuery {
                     s"Hive Query for ${tpname} would result in duplicate names:\n${prettyNames}")
           }
 
+          // Handle the optional partition fields
+          val partitionsTypeField = stats.collectFirst({
+            case q"type Partitions = $tpt" => new PartitionMapping[c.type](c).readPartitions(c.typecheck(tpt, c.TYPEmode).tpe)
+          })
+          val partitions = partitionsTypeField.getOrElse(Nil)
+
+          // Report an error if partition fields are the wrong type or missing.
+          val intermediateFields = fieldsToGenerate.toMap
+          partitions.foreach({ case (name, typ) => {
+            val matches = intermediateFields
+              .get(name)
+              .map(field => if (field == typ) {
+                \/-(None)
+              } else {
+                -\/(s"the incorrect type. Expected ${typ.hiveType} but field was actually ${field.hiveType}")
+              })
+              .getOrElse(-\/("missing"))
+
+            matches.swap.foreach(error => {
+              c.abort(c.enclosingPosition, s"Partition field ${name} is ${error}")
+            })
+          }})
+
+          // Filter out any partitioned fields from the struct type.
+          val partitionFields = partitions.map(_._1).toSet
+          val fieldsWithoutPartitions = fieldsToGenerate.filter({ case (name, _) => ! partitionFields.contains(name) })
+
           // Make the returned row itself a struct for simplicity/elegance.
-          val outputRecord = StructType(ListMap(fieldsToGenerate: _*))
+          val outputRecord = StructType(ListMap(fieldsWithoutPartitions: _*))
 
           // Compose all of the structs together.
           val allStructs = (outputRecord +: structs).zipWithIndex.toMap
@@ -203,7 +230,7 @@ object SqlQuery {
             q"Map(..${literals})"
           }
 
-          val partitionType = tq"Unit"
+          val defaultPartitionField = partitionsTypeField.fold[Tree](q"type Partitions = Unit")(_ => q"")
 
           val amendedParents = parents :+ tq"com.rouesnel.typedsql.CompiledSqlQuery"
           q"""$mods object $tpname extends ..$amendedParents {
@@ -213,20 +240,21 @@ object SqlQuery {
 
             ..${udfImplementations}
 
+            ${defaultPartitionField}
+
             def sql: String = ${Literal(Constant(sqlStatement))}
 
-            type DataSource = com.rouesnel.typedsql.DataSource[Row, ${partitionType}]
+            type DataSource = com.rouesnel.typedsql.DataSource[Row, Partitions]
 
-            def query(...${queryParams}): com.rouesnel.typedsql.HiveQueryDataSource[Row, ${partitionType}] = {
+            def query(...${queryParams}): com.rouesnel.typedsql.HiveQueryDataSource[Row, Partitions] = {
              implicit def hasStructType: com.rouesnel.typedsql.core.HasStructType[Row] =
                com.rouesnel.typedsql.core.HasStructType[Row](com.rouesnel.typedsql.core.HiveType.parseHiveType(${Literal(
             Constant(outputRecord.hiveType))}).toOption.get.asInstanceOf[com.rouesnel.typedsql.core.StructType])
-             com.rouesnel.typedsql.HiveQueryDataSource[Row, ${partitionType}](
+             com.rouesnel.typedsql.HiveQueryDataSource[Row, Partitions](
                sql,
                ${readParametersAsMap(parameters.keys)},
                ${readSourcesAsMap(sources.keys)},
-               ${createUdfMap()},
-               this.partitions
+               ${createUdfMap()}
               )
             }
           }"""
