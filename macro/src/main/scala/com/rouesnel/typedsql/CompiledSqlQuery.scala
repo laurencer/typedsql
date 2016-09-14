@@ -11,11 +11,11 @@ trait CompiledSqlQuery {
   def partitions: List[(String, String)] = Nil
 
   /** Source datasets inside the query */
-  abstract class Sources
+  type Sources
 
   /** Configuration parameters available inside the query */
-  abstract class Parameters
+  type Parameters
 
   /** Output type for each row returned by the query */
-  abstract class Row extends ThriftStruct
+  type Row <: ThriftStruct
 }
