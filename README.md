@@ -79,6 +79,39 @@ Two type aliases are available for `DataSource[_, _]` if `com.rouesnel.typedsql.
 - `Unpartitioned[T] => DataSource[T, Partitions.None]`: helper to avoid having to type `DataSource[T, Partitions.None]`
 - `Partitioned[T, P] => DataSource[T, P]`: allows consistency when using `Unpartitioned[T]`
 
+### Sourcing Data from Existing Tables
+
+Data from existing Hive tables can be used as input to TypedSQL queries
+by creating a `MaterialisedHiveTable`. For example:
+
+```
+val customersTable = MaterialisedHiveTable("/hive/view/warehouse/records/customers", "records.customers")
+```
+
+### Persisting TypedSQL Results
+
+TypedSQL results can be persisted to a Hive table by calling the `.persist(<strategy>)` function on the generated data source:
+
+```
+val persistedSummaries = TransactionSummary
+  .query("CREDIT", 2016)(transactionsTable, accountsTable, customersTable)
+  .persist(alwaysRefresh("summaries", "summaries.transactions", "/hive/view/warehouse/summaries/transactions"))
+```
+
+When this TypedSQL data source is evaluated (by calling `toHiveTable(<config>): Execution[_]` and running the execution) it will use the provided strategy to determine whether to execute the query and also where to store the output.
+
+Five persistence strategies are provided:
+
+- `alwaysRefresh(<name>, <tbl name>, <path on HDFS>)`: this strategy will drop any existing tables with the same name and recreate them by executing the query each time.
+- `reuseExisting(<name>, <tbl name>, <path on HDFS>)`: this strategy will try and reuse an existing table if it exists (e.g. it won't execute the Hive query if the output is there) unless the table has a conflicting schema (in which case it will drop the existing table and re-execute the query).
+- `forceReuseExisting(<name>, <tbl name>, <path on HDFS>)`: this strategy will try and reuse an existing table if it already exists (even if it has a different schema). Note this may cause runtime exceptions due to incompatible schemas.
+- `appendToExisting(<name>, <tbl name>, <path on HDFS>, <recreateOnIncompatibleSchema>)`: this strategy will always execute the specified query (potentially overwriting/appending any existing partitions).
+
+  If the existing table has a conflicting schema and the `recreateOnIncompatibleSchema` flag is set to `true` (by default `false`) it will drop the existing table and recreate it before executing the query. If the flag is `false` it will throw an exception at runtime.
+
+  If the table does not exist, this strategy will create it.
+- `flaggedReuse(<name>, <tbl name>, <path on HDFS>)`: this strategy looks for the `--reuse-<name>` command line argument. If set - it will behave the same as `reuseExisting`, if not set it will behave the same as `alwaysRefresh`.
+
 ## Reusing Queries
 
 The `Row` class generated on the object is usable directly in Scalding flows or by other TypedSQL queries.
@@ -123,7 +156,7 @@ Scala functions inside the `@SqlQuery` object with the `@UDF` annotation.
 ```scala
 
 @SqlQuery object TransactionAnalysis {
-  @UDF convertTransactionId(id: String): String = 
+  @UDF convertTransactionId(id: String): String =
     "TRANS_" + id.split("\\.").last
 
   def query(transactions: DataSource[Transaction, Partitions.None],
@@ -139,7 +172,7 @@ Scala functions inside the `@SqlQuery` object with the `@UDF` annotation.
 
 ```
 
-The `@UDF` macro will generate a `GenericUDF` implementation for the Scala function behind the 
+The `@UDF` macro will generate a `GenericUDF` implementation for the Scala function behind the
 scenes and automatically register the function when executing the queries.
 
 ## Partitioning (experimental)
@@ -147,18 +180,18 @@ scenes and automatically register the function when executing the queries.
 Partitions are represented through the second type parameter of DataSource (e.g. `DataSource[RowType, Partitions]`).
 
 The partitions type parameter can either be:
- 
+
 - `Partitions.None` - represents an unpartitioned dataset, or
-- An anonymous class of the form `{ def year: String; def month: Int }`. In this case there are 
+- An anonymous class of the form `{ def year: String; def month: Int }`. In this case there are
   two partition columns: `year` and `month`.
-  
-To partition the result of a `@SqlQuery` - simply add a type alias called `Partitions` to the 
+
+To partition the result of a `@SqlQuery` - simply add a type alias called `Partitions` to the
 class. For example:
 
 ```scala
 @SqlQuery object MyPartitionedQuery {
   type Partitions = { def year: String; def month: String; def day: String }
-  def query = """SELECT "2000" as year, "10" as month, "31" as day """ 
+  def query = """SELECT "2000" as year, "10" as month, "31" as day """
 }
 ```
 
@@ -170,12 +203,12 @@ in the folder structure. Thus the partition columns are not present in the `Row`
 
 **WARNING**: *due to the way Hive dynamic partitioning works, the order of the columns in the query that
 is actually run may be different to the order specified in the query as written. Any partition
-columns are re-arranged to be the last of the selected columns. **This may break any use of 
+columns are re-arranged to be the last of the selected columns. **This may break any use of
 positional column offsets*.
 
 ## Examples
 
-A number of examples are included in the `examples` sub-project (these are also used as test cases). 
+A number of examples are included in the `examples` sub-project (these are also used as test cases).
 
 Some examples can be run on a real Hadoop cluster by executing `./sbt examples/assembly` and then
 copying the jars in the `examples/target/scala-2.11/*.jar` to your cluster.
