@@ -237,7 +237,76 @@ object DataSource {
           }
         }
       }
+    def overwritePartitions[T <: ThriftStruct: Manifest: HasStructType, P: Partitions](
+        name: String,
+        hiveTable: String,
+        path: String,
+        recreateOnIncompatibleSchema: Boolean = false): Strategy[T, P] =
+      (config: Config, underlying: PersistableSource[T, P]) => {
+        val named: DataSource[T, P] = underlying match {
+          case hq: HiveQueryDataSource[T, _] =>
+            hq.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path), overwrite = true)
+          case tp: TypedPipeDataSource[T, _] =>
+            tp.copy(hiveTableName = Some(hiveTable), hdfsPath = Some(path))
+        }
+        Execution.from {
+          val db :: tableName :: Nil = hiveTable.split("\\.").toList
 
+          val absolutePath = Hdfs
+            .mkdirs(Hdfs.path(path))
+            .flatMap(_ => Hdfs.fileStatus(Hdfs.path(path)).map(_.getPath))
+            .run(config.conf)
+            .foldMessage[Path](
+              identity _,
+              err => throw new Exception(s"Error creating HDFS path ${path}: ${err}"))
+
+          val conflictingTableExists = Hive
+            .existsTable(db, tableName)
+            .run(config.conf)
+            .fold[Boolean](
+              identity _,
+              err =>
+                throw new Exception(s"Failed when checking whether ${hiveTable} existed: ${err}"))
+
+          val alreadyExists = HiveMetadataTable
+            .existsTableStrict[T, P](db, tableName, Some(absolutePath))
+            .run(config.conf)
+            .fold[Boolean](
+              identity _,
+              err =>
+                throw new Exception(
+                  s"Failed when checking whether ${hiveTable} matched the expected table: ${err}"))
+
+          if (alreadyExists && conflictingTableExists) {
+            log.info(
+              s"DataSource ${name} already exists (${hiveTable} - ${path}) - will append/overwrite partitions.")
+            named
+          } else if (conflictingTableExists) {
+            if (recreateOnIncompatibleSchema) {
+              log.info(
+                s"A conflicting table for DataSource ${name} already exists (${hiveTable} - ${path}). Dropping existing data and rematerialising.")
+              Hive
+                .withClient(_.dropTable(db, tableName))
+                .run(config.conf)
+                .fold[Unit](identity _,
+                            err =>
+                              throw new Exception(
+                                s"Failed when deleting existing table ${hiveTable}: ${err}"))
+
+              named
+            } else {
+              log.error(
+                s"A conflicting table for DataSource ${name} already exists (${hiveTable} - ${path}). Aborting.")
+
+              throw new Exception(s"Table with incompatible schema exists: ${hiveTable}")
+            }
+          } else {
+            log.info(
+              s"DataSource ${name} does not exist (${hiveTable} - ${path}). Materialising data source.")
+            named
+          }
+        }
+      }
     def forceReuseExisting[T <: ThriftStruct: Manifest: HasStructType, P: Partitions](
         name: String,
         hiveTable: String,
@@ -490,7 +559,8 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType, P: Pa
     udfs: Map[(String, String), Class[GenericUDF]],
     hiveViewName: Option[String] = None,
     hiveTableName: Option[String] = None,
-    hdfsPath: Option[String] = None
+    hdfsPath: Option[String] = None,
+    overwrite: Boolean = false
 ) extends DataSource[T, P]
     with HiveViewSource[T, P]
     with PersistableSource[T, P] {
@@ -687,9 +757,11 @@ case class HiveQueryDataSource[T <: ThriftStruct: Manifest: HasStructType, P: Pa
               s"PARTITION (${partitionCols.mkString(", ")})"
             }
 
+            val overwriteStatement = if (overwrite) "OVERWRITE" else "INTO"
+
             // Insert the data
             runQuery(driver)(s"""
-                |INSERT OVERWRITE TABLE ${tableName} ${partitionStatement} ${reorganisedColumns}
+                |INSERT ${overwriteStatement} TABLE ${tableName} ${partitionStatement} ${reorganisedColumns}
               """.stripMargin)
 
             // Convert from a managed table to an external table.

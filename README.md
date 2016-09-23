@@ -105,11 +105,12 @@ Five persistence strategies are provided:
 - `alwaysRefresh(<name>, <tbl name>, <path on HDFS>)`: this strategy will drop any existing tables with the same name and recreate them by executing the query each time.
 - `reuseExisting(<name>, <tbl name>, <path on HDFS>)`: this strategy will try and reuse an existing table if it exists (e.g. it won't execute the Hive query if the output is there) unless the table has a conflicting schema (in which case it will drop the existing table and re-execute the query).
 - `forceReuseExisting(<name>, <tbl name>, <path on HDFS>)`: this strategy will try and reuse an existing table if it already exists (even if it has a different schema). Note this may cause runtime exceptions due to incompatible schemas.
-- `appendToExisting(<name>, <tbl name>, <path on HDFS>, <recreateOnIncompatibleSchema>)`: this strategy will always execute the specified query (potentially overwriting/appending any existing partitions).
-
-  If the existing table has a conflicting schema and the `recreateOnIncompatibleSchema` flag is set to `true` (by default `false`) it will drop the existing table and recreate it before executing the query. If the flag is `false` it will throw an exception at runtime.
-
-  If the table does not exist, this strategy will create it.
+- `appendToExisting(<name>, <tbl name>, <path on HDFS>, <recreateOnIncompatibleSchema>)`: this strategy will always execute the specified query (appending to any existing partitions) using `INSERT INTO`.
+  + If the existing table has a conflicting schema and the `recreateOnIncompatibleSchema` flag is set to `true` (by default `false`) it will drop the existing table and recreate it before executing the query. If the flag is `false` it will throw an exception at runtime.
+  + If the table does not exist, this strategy will create it.
+- `overwritePartitions(<name>, <tbl name>, <path on HDFS>, <recreateOnIncompatibleSchema>)`: this strategy will always execute the specified query (overwriting any existing partitions) using `INSERT OVERWRITE`.
+  + If the existing table has a conflicting schema and the `recreateOnIncompatibleSchema` flag is set to `true` (by default `false`) it will drop the existing table and recreate it before executing the query. If the flag is `false` it will throw an exception at runtime.
+  + If the table does not exist, this strategy will create it.
 - `flaggedReuse(<name>, <tbl name>, <path on HDFS>)`: this strategy looks for the `--reuse-<name>` command line argument. If set - it will behave the same as `reuseExisting`, if not set it will behave the same as `alwaysRefresh`.
 
 ## Reusing Queries
