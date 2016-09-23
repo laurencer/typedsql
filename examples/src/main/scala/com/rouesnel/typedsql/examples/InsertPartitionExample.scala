@@ -29,7 +29,7 @@ object PartitionedOrders {
   type Partitions = PartitionSchemes.ByYearMonth
 
   def query(orders: Unpartitioned[Order]) =
-  """
+    """
     SELECT o.*,
            from_unixtime(o.order_time, 'YYYY') as year,
            from_unixtime(o.order_time, 'MM') as month
@@ -40,7 +40,7 @@ object PartitionedOrders {
 @SqlQuery
 object SelectFromPartitionedOrders {
   def query(orders: InsertPartitionExample.DataSource) =
-  """
+    """
     SELECT * FROM ${orders}
   """
 }

@@ -167,12 +167,11 @@ object DataSource {
         }
       }
 
-
     def appendToExisting[T <: ThriftStruct: Manifest: HasStructType, P: Partitions](
-                                                                                  name: String,
-                                                                                  hiveTable: String,
-                                                                                  path: String,
-                                                                                  recreateOnIncompatibleSchema: Boolean = false): Strategy[T, P] =
+        name: String,
+        hiveTable: String,
+        path: String,
+        recreateOnIncompatibleSchema: Boolean = false): Strategy[T, P] =
       (config: Config, underlying: PersistableSource[T, P]) => {
         val named: DataSource[T, P] = underlying match {
           case hq: HiveQueryDataSource[T, _] =>
@@ -188,25 +187,25 @@ object DataSource {
             .flatMap(_ => Hdfs.fileStatus(Hdfs.path(path)).map(_.getPath))
             .run(config.conf)
             .foldMessage[Path](
-            identity _,
-            err => throw new Exception(s"Error creating HDFS path ${path}: ${err}"))
+              identity _,
+              err => throw new Exception(s"Error creating HDFS path ${path}: ${err}"))
 
           val conflictingTableExists = Hive
             .existsTable(db, tableName)
             .run(config.conf)
             .fold[Boolean](
-            identity _,
-            err =>
-              throw new Exception(s"Failed when checking whether ${hiveTable} existed: ${err}"))
+              identity _,
+              err =>
+                throw new Exception(s"Failed when checking whether ${hiveTable} existed: ${err}"))
 
           val alreadyExists = HiveMetadataTable
             .existsTableStrict[T, P](db, tableName, Some(absolutePath))
             .run(config.conf)
             .fold[Boolean](
-            identity _,
-            err =>
-              throw new Exception(
-                s"Failed when checking whether ${hiveTable} matched the expected table: ${err}"))
+              identity _,
+              err =>
+                throw new Exception(
+                  s"Failed when checking whether ${hiveTable} matched the expected table: ${err}"))
 
           if (alreadyExists && conflictingTableExists) {
             log.info(
@@ -219,10 +218,10 @@ object DataSource {
               Hive
                 .withClient(_.dropTable(db, tableName))
                 .run(config.conf)
-                .fold[Unit](
-                identity _,
-                err =>
-                  throw new Exception(s"Failed when deleting existing table ${hiveTable}: ${err}"))
+                .fold[Unit](identity _,
+                            err =>
+                              throw new Exception(
+                                s"Failed when deleting existing table ${hiveTable}: ${err}"))
 
               named
             } else {
