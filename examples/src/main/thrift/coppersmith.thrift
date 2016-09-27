@@ -15,10 +15,10 @@ struct OrderLineItem {
 struct Order {
   1: required string order_id
   2: required i32    customer_id
-  3: required i32    order_time
-  4: optional i32    delivered_at
-  5: optional i32    cancelled
-  6: optional i32    refunded_at
+  3: required i64    order_time
+  4: optional i64    delivered_at
+  5: optional i64    cancelled
+  6: optional i64    refunded_at
 }
 
 struct Payment {
